@@ -500,9 +500,8 @@ with main_tab1:
             line.add_yaxis(
                 series_name=f"{g} (경과조치 전)",
                 y_axis=[round(float(v), 2) if pd.notnull(v) else None for v in g_df['ratio_before']],
-                is_selected=False, # 초기 비활성화
                 symbol="circle",
-                symbol_size=8,
+                                symbol_size=8,
                 linestyle_opts=opts.LineStyleOpts(width=2, type_="dashed", color=colors[g]),
                 itemstyle_opts=opts.ItemStyleOpts(color=colors[g]),
                 label_opts=opts.LabelOpts(is_show=False),
@@ -533,6 +532,9 @@ with main_tab1:
                 label_opts=opts.LabelOpts(is_show=False),
             )
             
+        # 초기 비활성화할 시리즈 맵 생성
+        selected_map = {f"{g} (경과조치 전)": False for g in ['생명보험', '손해보험', '전체']}
+        
         line.set_global_opts(
             title_opts=opts.TitleOpts(title="보험업권별 K-ICS 비율 및 국고채 10년 금리 추이", subtitle="기준년월별 현황"),
             tooltip_opts=opts.TooltipOpts(trigger="axis", axis_pointer_type="cross"),
@@ -542,7 +544,11 @@ with main_tab1:
                 axislabel_opts=opts.LabelOpts(formatter="{value}%"),
                 splitline_opts=opts.SplitLineOpts(is_show=True),
             ),
-            legend_opts=opts.LegendOpts(pos_top="bottom", orient="horizontal"),
+            legend_opts=opts.LegendOpts(
+                pos_top="bottom", 
+                orient="horizontal",
+                selected_map=selected_map
+            ),
             datazoom_opts=[opts.DataZoomOpts(), opts.DataZoomOpts(type_="inside")],
             toolbox_opts=opts.ToolboxOpts(is_show=True),
         )
