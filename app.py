@@ -104,7 +104,7 @@ def save_to_md(df):
         try:
             # 임시 뷰를 생성하여 데이터를 적재
             conn.register("df_to_save", df)
-            conn.execute(f"INSERT INTO {TABLE_NAME} SELECT * EXCLUDE(수집일시), CURRENT_TIMESTAMP FROM df_to_save")
+            conn.execute(f"INSERT INTO {TABLE_NAME} SELECT *, CURRENT_TIMESTAMP FROM df_to_save")
             conn.close()
         except Exception as e:
             st.error(f"데이터 저장 실패: {e}")
