@@ -555,8 +555,8 @@ with main_tab1:
                 border_color="#ccc"
             ),
             datazoom_opts=[
-                opts.DataZoomOpts(start=0, end=100), 
-                opts.DataZoomOpts(type_="inside", start=0, end=100)
+                opts.DataZoomOpts(range_start=0, range_end=100), 
+                opts.DataZoomOpts(type_="inside", range_start=0, range_end=100)
             ],
             toolbox_opts=opts.ToolboxOpts(is_show=True),
         )
