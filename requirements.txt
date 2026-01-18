@@ -4,3 +4,4 @@ pandas
 nest_asyncio
 duckdb
 plotly
+requests

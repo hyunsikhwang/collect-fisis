@@ -9,6 +9,8 @@ import duckdb
 import os
 import plotly.graph_objects as go
 import plotly.express as px
+import requests
+from datetime import datetime
 
 # Streamlit 페이지 설정
 st.set_page_config(
@@ -215,6 +217,40 @@ def load_kics_analysis_data():
     except Exception as e:
         st.error(f"분석 데이터 로드 실패: {e}")
         return pd.DataFrame()
+
+def fetch_ecos_bond_yield(start_month, end_month):
+    """ECOS에서 국고채 10년 금리 조회"""
+    ECOS_API_KEY = st.secrets.get("ECOS_API_KEY", "")
+    if not ECOS_API_KEY:
+        return pd.DataFrame()
+    
+    # K-ICS 데이터 범위에 맞춰 시작/종료일 설정
+    # start_month/end_month: '202303' 형식 -> '20230301' / '20230331' 등으로 변환 필요하나
+    # ECOS는 단순히 앞뒤 날짜만 넉넉히 주면 됨
+    start_date = f"{start_month}01"
+    # 현재 날짜 기준
+    KST = timezone('Asia/Seoul')
+    nowSeo = datetime.now(KST).strftime('%Y%m%d')
+    
+    bond_cd = '010210000' # 국고채 10년
+    url = f'http://ecos.bok.or.kr/api/StatisticSearch/{ECOS_API_KEY}/json/kr/1/10000/817Y002/D/{start_date}/{nowSeo}/{bond_cd}'
+
+    try:
+        res = requests.get(url, timeout=10)
+        data = res.json()
+        if 'StatisticSearch' in data and 'row' in data['StatisticSearch']:
+            rows = data['StatisticSearch']['row']
+            df = pd.DataFrame(rows)
+            df['yield'] = df['DATA_VALUE'].astype(float)
+            # TIME: 20230301 -> 기준년월 202303 추출
+            df['기준년월'] = df['TIME'].str[:6]
+            
+            # 월별 마지막 영업일 기준 금리 추출 (K-ICS 대비용)
+            df_monthly = df.groupby('기준년월').last().reset_index()[['기준년월', 'yield']]
+            return df_monthly
+    except Exception as e:
+        st.warning(f"ECOS 금리 데이터 로드 실패: {e}")
+    return pd.DataFrame()
 
 # ==========================================
 # 2. 비동기 통신 함수 정의
@@ -459,15 +495,44 @@ with main_tab1:
             ))
         
         fig.update_layout(
-            title="보험업권별 K-ICS 비율 추이 (경과조치 전/후)",
+            title="보험업권별 K-ICS 비율 및 국고채 10년 금리 추이",
             xaxis_title="기준년월",
             yaxis_title="K-ICS Ratio (%)",
+            yaxis2=dict(
+                title="국고채 10년 금리 (%)",
+                overlaying='y',
+                side='right',
+                showgrid=False
+            ),
             legend_title="구분",
             template="plotly_white",
             hovermode="x unified",
             height=600,
             yaxis=dict(ticksuffix="%")
         )
+
+        # ECOS 금리 데이터 추가
+        min_month = analysis_df['기준년월'].min()
+        max_month = analysis_df['기준년월'].max()
+        
+        bond_df = fetch_ecos_bond_yield(min_month, max_month)
+        
+        if not bond_df.empty:
+            # 시각화 기간에 맞게 필터링
+            bond_df = bond_df[(bond_df['기준년월'] >= min_month) & (bond_df['기준년월'] <= max_month)]
+            
+            fig.add_trace(go.Scatter(
+                x=bond_df['기준년월'],
+                y=bond_df['yield'],
+                name="국고채 10년 (우축)",
+                line=dict(color='gray', width=3, dash='dash'),
+                yaxis='y2',
+                mode='lines+markers',
+                marker=dict(symbol='diamond', size=10)
+            ))
+        else:
+            if not st.secrets.get("ECOS_API_KEY"):
+                st.caption("ℹ️ ECOS_API_KEY를 설정하면 국고채 금리를 함께 보실 수 있습니다.")
         
         st.plotly_chart(fig, use_container_width=True)
         
