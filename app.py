@@ -59,7 +59,10 @@ def get_md_connection():
         return None
     try:
         # MotherDuck 연결 (md: 뒤에 토큰이 없으면 st.secrets에서 가져오거나 환경변수 확인)
-        conn = duckdb.connect(f"md:{DB_NAME}?motherduck_token={MD_TOKEN}")
+        conn = duckdb.connect(f"md:?motherduck_token={MD_TOKEN}")
+        # 데이터베이스 생성 및 사용
+        conn.execute(f"CREATE DATABASE IF NOT EXISTS {DB_NAME}")
+        conn.execute(f"USE {DB_NAME}")
         # 테이블이 없으면 생성
         conn.execute(f"""
             CREATE TABLE IF NOT EXISTS {TABLE_NAME} (
