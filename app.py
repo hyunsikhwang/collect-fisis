@@ -493,7 +493,7 @@ with main_tab1:
                 linestyle_opts=opts.LineStyleOpts(width=4, color=colors[g]),
                 itemstyle_opts=opts.ItemStyleOpts(color=colors[g]),
                 label_opts=opts.LabelOpts(is_show=False),
-                is_smooth=True,
+                is_smooth=False,
             )
             
             # 경과조치 전 (점선, 초기 비활성화)
@@ -505,7 +505,7 @@ with main_tab1:
                 linestyle_opts=opts.LineStyleOpts(width=2, type_="dashed", color=colors[g]),
                 itemstyle_opts=opts.ItemStyleOpts(color=colors[g]),
                 label_opts=opts.LabelOpts(is_show=False),
-                is_smooth=True,
+                is_smooth=False,
             )
             
         # 보조축 추가 (금리용)
