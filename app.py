@@ -21,28 +21,11 @@ st.set_page_config(
 nest_asyncio.apply()
 
 # ==========================================
-# 1. 상수 및 설정 (사이드바 입력)
+# 1. 상수 및 기본 설정
 # ==========================================
-st.sidebar.header("⚙️ 설정 (Settings)")
-
-# API 키 (st.secrets 처리)
+# API 키 (st.secrets 처리 후 필요시 UI에서 입력)
 API_KEY = st.secrets.get("FSS_API_KEY", "")
-
-if not API_KEY:
-    API_KEY = st.sidebar.text_input(
-        "금융감독원 API Key", 
-        type="password",
-        help="금융감독원 Open API 인증키를 입력하세요. (계속 사용하시려면 .streamlit/secrets.toml에 FSS_API_KEY를 설정하세요.)"
-    )
-else:
-    st.sidebar.success("✅ API Key가 secrets에서 로드되었습니다.")
-
-
-TARGET_MONTH = st.sidebar.text_input(
-    "기준년월 (YYYYMM)", 
-    value="202509",
-    help="조회하고 싶은 년월을 입력하세요."
-)
+TARGET_MONTH = "202509" # 기본값 설정
 
 TERM = "Q" # 분기
 BASE_URL = "http://fisis.fss.or.kr/openapi"
@@ -433,10 +416,10 @@ async def run_async_collection():
 st.title("📊 보험사 지급여력비율 분석 대시보드")
 
 # 메인 탭 분리: 분석 대시보드와 데이터 수집기
-main_tab1, main_tab2 = st.tabs(["� 분석 대시보드 (Dashboard)", "📡 데이터 수집기 (Collector)"])
+main_tab1, main_tab2 = st.tabs(["📈 분석 대시보드 (Dashboard)", "📡 데이터 수집기 (Collector)"])
 
 with main_tab1:
-    st.subheader("� K-ICS 비율 추이 분석")
+    st.subheader("📊 K-ICS 비율 추이 분석")
     st.info("MotherDuck에 저장된 모든 과거 데이터를 기반으로 시계열 분석을 수행합니다.")
     
     analysis_df = load_kics_analysis_data()
@@ -518,9 +501,31 @@ with main_tab1:
 
 with main_tab2:
     st.subheader("📡 FSS Open API 데이터 수집")
+    
+    # 설정 섹션 (기존 사이드바에서 이동)
+    with st.expander("⚙️ 수집 설정 (Settings)", expanded=True):
+        col1, col2 = st.columns(2)
+        with col1:
+            if not st.secrets.get("FSS_API_KEY"):
+                API_KEY = st.text_input(
+                    "금융감독원 API Key", 
+                    value=API_KEY,
+                    type="password",
+                    help="인증키를 입력하세요."
+                )
+            else:
+                st.success("✅ API Key가 로드되었습니다.")
+                API_KEY = st.secrets.get("FSS_API_KEY")
+        
+        with col2:
+            TARGET_MONTH = st.text_input(
+                "수집 기준년월 (YYYYMM)", 
+                value="202509",
+                help="조회하고 싶은 년월을 입력하세요."
+            )
+
     st.markdown(f"""
-    금융감독원 Open API를 사용하여 보험사의 지급여력비율 관련 데이터를 수집하고 MotherDuck에 저장합니다.
-    - **현재 기준년월 설정**: {TARGET_MONTH}
+    Open API를 사용하여 보험사의 지급여력비율 관련 데이터를 수집하고 MotherDuck에 저장합니다.
     - **대상**: 생명보험(H), 손해보험(I)
     """)
     
