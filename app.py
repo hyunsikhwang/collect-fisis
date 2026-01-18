@@ -191,7 +191,7 @@ async def fetch_statistics(session, semaphore, company, account, pbar, status_te
                 '회사명': company['financeNm'],
                 '계정코드': account['accountCd'],
                 '계정명': account['accountNm'],
-                '기준년월': item.get('base_month', TARGET_MONTH),
+                '기준년월': TARGET_MONTH, # API 결과와 상관없이 요청한 기준년월로 저장 (일관성 유지)
                 '단위': item.get('unit_name', ''),
                 '값': raw_value
             }
@@ -210,6 +210,8 @@ async def run_async_collection():
         
         if not cached_df.empty:
             status_container.write(f"✅ {len(cached_df)}건의 데이터를 MotherDuck에서 로드했습니다.")
+        else:
+            status_container.write("ℹ️ 해당 월의 캐시된 데이터가 없습니다.")
         
         async with aiohttp.ClientSession() as session:
             # 1. 목록 조회
@@ -232,15 +234,16 @@ async def run_async_collection():
             
             status_container.write("📦 2. 미수집 데이터 확인 및 요청 생성 중...")
             
-            # 기존 데이터 키 생성 (회사코드, 계정코드)
             existing_keys = set()
             if not cached_df.empty:
-                existing_keys = set(zip(cached_df['회사코드'], cached_df['계정코드']))
+                # 데이터 타입을 문자열로 강제 변환하여 비교 (캐시 미스 방지)
+                existing_keys = set(zip(cached_df['회사코드'].astype(str), cached_df['계정코드'].astype(str)))
 
             def build_tasks(companies, accounts):
                 for comp in companies:
                     for acc in accounts:
-                        if (comp['financeCd'], acc['accountCd']) not in existing_keys:
+                        # 비교 시에도 문자열로 변환
+                        if (str(comp['financeCd']), str(acc['accountCd'])) not in existing_keys:
                             tasks.append(fetch_statistics(session, semaphore, comp, acc, None, None))
 
             build_tasks(life_companies, life_accounts)
