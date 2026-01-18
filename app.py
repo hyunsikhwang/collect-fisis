@@ -404,127 +404,146 @@ async def run_async_collection():
 # ==========================================
 # 4. Streamlit UI 구성
 # ==========================================
-st.title("📊 보험사 지급여력비율 조회기")
-st.markdown(f"""
-금융감독원 Open API를 사용하여 보험사의 지급여력비율 관련 데이터를 수집합니다.
-- **기준년월**: {TARGET_MONTH}
-- **대상**: 생명보험(H), 손해보험(I)
-""")
+st.title("📊 보험사 지급여력비율 분석 대시보드")
 
-# 실행 버튼
-if st.button("데이터 수집 시작 (Start)", type="primary"):
-    if not API_KEY:
-        st.error("API Key를 입력해주세요.")
-    else:
-        # 비동기 함수 실행
-        raw_data = asyncio.run(run_async_collection())
+# 메인 탭 분리: 분석 대시보드와 데이터 수집기
+main_tab1, main_tab2 = st.tabs(["� 분석 대시보드 (Dashboard)", "📡 데이터 수집기 (Collector)"])
 
-        if raw_data:
-            df = pd.DataFrame(raw_data)
+with main_tab1:
+    st.subheader("� K-ICS 비율 추이 분석")
+    st.info("MotherDuck에 저장된 모든 과거 데이터를 기반으로 시계열 분석을 수행합니다.")
+    
+    analysis_df = load_kics_analysis_data()
+    
+    if not analysis_df.empty:
+        # Plotly 차트 생성
+        fig = go.Figure()
+        
+        # 색상 및 스타일 설정
+        styles = {
+            '생명보험': {'color': '#1f77b4'},
+            '손해보험': {'color': '#ff7f0e'},
+            '전체': {'color': '#2ca02c'}
+        }
+        
+        for g in ['생명보험', '손해보험', '전체']:
+            g_df = analysis_df[analysis_df['구분'] == g]
             
-            # 전처리
-            df['값'] = pd.to_numeric(df['값'].astype(str).str.replace(',', ''), errors='coerce')
+            # 경과조치 적용 전 (점선)
+            fig.add_trace(go.Scatter(
+                x=g_df['기준년월'], 
+                y=g_df['ratio_before'],
+                name=f"{g} (경과조치 전)",
+                line=dict(color=styles[g]['color'], dash='dot', width=2),
+                mode='markers+lines',
+                marker=dict(size=8)
+            ))
+            
+            # 경과조치 적용 후 (실선)
+            fig.add_trace(go.Scatter(
+                x=g_df['기준년월'], 
+                y=g_df['ratio_after'],
+                name=f"{g} (경과조치 후)",
+                line=dict(color=styles[g]['color'], width=4),
+                mode='markers+lines',
+                marker=dict(size=10)
+            ))
+        
+        fig.update_layout(
+            title="보험업권별 K-ICS 비율 추이 (경과조치 전/후)",
+            xaxis_title="기준년월",
+            yaxis_title="K-ICS Ratio (%)",
+            legend_title="구분",
+            template="plotly_white",
+            hovermode="x unified",
+            height=600,
+            yaxis=dict(ticksuffix="%")
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
+        
+        # 분석 데이터 테이블
+        with st.expander("📍 상세 수치 데이터 확인"):
+            st.dataframe(analysis_df, use_container_width=True)
+    else:
+        st.warning("표시할 분석 데이터가 없습니다. 먼저 '데이터 수집기' 탭에서 데이터를 수집해 주세요.")
+        
+        # 디버깅을 위한 데이터 현황 세션 (Dashboard에서도 데이터가 없을 때 표시)
+        with st.expander("🛠️ 데이터베이스 현황 확인 (디버깅)"):
+            conn = get_md_connection()
+            if conn:
+                try:
+                    count = conn.execute(f"SELECT COUNT(*) FROM {TABLE_NAME}").fetchone()[0]
+                    st.write(f"현재 총 레코드 수: {count}건")
+                    
+                    st.write("보관 중인 계정명 목록:")
+                    distinct_accounts = conn.execute(f"SELECT DISTINCT 계정명 FROM {TABLE_NAME}").df()
+                    st.dataframe(distinct_accounts)
+                    
+                    st.write("보관 중인 기준년월 목록:")
+                    distinct_months = conn.execute(f"SELECT DISTINCT 기준년월 FROM {TABLE_NAME} ORDER BY 기준년월").df()
+                    st.dataframe(distinct_months)
+                    
+                    conn.close()
+                except Exception as e:
+                    st.error(f"현황 확인 중 오류: {e}")
+            else:
+                st.warning("MotherDuck 연결 실패 (토큰 확인 필요)")
 
-            # 피벗 테이블
-            df_pivot = df.pivot_table(
-                index=['구분', '회사명', '기준년월'],
-                columns='계정명',
-                values='값',
-                aggfunc='first'
-            ).reset_index()
-
-            # 결과 탭 구성
-            tab1, tab2, tab3 = st.tabs(["📋 요약 테이블 (Pivot)", "📊 시각화 분석 (Charts)", "raw 원본 데이터"])
-
-            with tab1:
-                st.subheader("결과 데이터")
-                st.dataframe(df_pivot, use_container_width=True)
-                
-                # CSV 다운로드
-                csv = df_pivot.to_csv(index=False, encoding='utf-8-sig')
-                st.download_button(
-                    label="💾 결과 다운로드 (CSV)",
-                    data=csv,
-                    file_name=f"insurance_solvency_{TARGET_MONTH}_pivot.csv",
-                    mime="text/csv"
-                )
-
-            with tab2:
-                st.subheader("📈 K-ICS 비율 추이 분석 (MotherDuck 데이터 기반)")
-                analysis_df = load_kics_analysis_data()
-                
-                if not analysis_df.empty:
-                    # Plotly 차트 생성
-                    fig = go.Figure()
-                    
-                    # 색상 및 스타일 설정
-                    styles = {
-                        '생명보험': {'color': '#1f77b4'},
-                        '손해보험': {'color': '#ff7f0e'},
-                        '전체': {'color': '#2ca02c'}
-                    }
-                    
-                    for g in ['생명보험', '손해보험', '전체']:
-                        g_df = analysis_df[analysis_df['구분'] == g]
-                        
-                        # 경과조치 적용 전 (점선)
-                        fig.add_trace(go.Scatter(
-                            x=g_df['기준년월'], 
-                            y=g_df['ratio_before'],
-                            name=f"{g} (경과조치 전)",
-                            line=dict(color=styles[g]['color'], dash='dot', width=2),
-                            mode='lines+markers'
-                        ))
-                        
-                        # 경과조치 적용 후 (실선)
-                        fig.add_trace(go.Scatter(
-                            x=g_df['기준년월'], 
-                            y=g_df['ratio_after'],
-                            name=f"{g} (경과조치 후)",
-                            line=dict(color=styles[g]['color'], width=4),
-                            mode='lines+markers'
-                        ))
-                    
-                    fig.update_layout(
-                        title="구분별 K-ICS 비율 추이",
-                        xaxis_title="기준년월",
-                        yaxis_title="K-ICS Ratio (%)",
-                        legend_title="구분",
-                        template="plotly_white",
-                        hovermode="x unified"
-                    )
-                    
-                    st.plotly_chart(fig, use_container_width=True)
-                    
-                    # 분석 데이터 테이블
-                    with st.expander("📍 계산된 수치 데이터 보기"):
-                        st.dataframe(analysis_df, use_container_width=True)
-                else:
-                    st.info("시각화를 위한 시계열 데이터가 MotherDuck에 부족합니다. 더 많은 기준년월 데이터를 수집해 주세요.")
-                    
-                    # 디버깅을 위한 데이터 현황 세션
-                    with st.expander("🛠️ 데이터베이스 현황 확인 (디버깅)"):
-                        conn = get_md_connection()
-                        if conn:
-                            try:
-                                count = conn.execute(f"SELECT COUNT(*) FROM {TABLE_NAME}").fetchone()[0]
-                                st.write(f"현재 총 레코드 수: {count}건")
-                                
-                                st.write("보관 중인 계정명 목록:")
-                                distinct_accounts = conn.execute(f"SELECT DISTINCT 계정명 FROM {TABLE_NAME}").df()
-                                st.dataframe(distinct_accounts)
-                                
-                                st.write("보관 중인 기준년월 목록:")
-                                distinct_months = conn.execute(f"SELECT DISTINCT 기준년월 FROM {TABLE_NAME} ORDER BY 기준년월").df()
-                                st.dataframe(distinct_months)
-                                
-                                conn.close()
-                            except Exception as e:
-                                st.error(f"현황 확인 중 오류: {e}")
-                        else:
-                            st.warning("MotherDuck 연결 실패 (토큰 확인 필요)")
-
-            with tab3:
-                st.dataframe(df, use_container_width=True)
+with main_tab2:
+    st.subheader("📡 FSS Open API 데이터 수집")
+    st.markdown(f"""
+    금융감독원 Open API를 사용하여 보험사의 지급여력비율 관련 데이터를 수집하고 MotherDuck에 저장합니다.
+    - **현재 기준년월 설정**: {TARGET_MONTH}
+    - **대상**: 생명보험(H), 손해보험(I)
+    """)
+    
+    # 실행 버튼
+    if st.button("🚀 데이터 수집 시작 (Start Collection)", type="primary"):
+        if not API_KEY:
+            st.error("API Key를 입력해주세요. (사이드바에서 입력 가능)")
         else:
-            st.warning("수집된 데이터가 없습니다. API Key나 기준년월을 확인해주세요.")
+            # 비동기 함수 실행
+            raw_data = asyncio.run(run_async_collection())
+
+            if raw_data:
+                df = pd.DataFrame(raw_data)
+                
+                # 전처리
+                df['값'] = pd.to_numeric(df['값'].astype(str).str.replace(',', ''), errors='coerce')
+
+                # 피벗 테이블
+                df_pivot = df.pivot_table(
+                    index=['구분', '회사명', '기준년월'],
+                    columns='계정명',
+                    values='값',
+                    aggfunc='first'
+                ).reset_index()
+
+                # 결과 섹션
+                st.divider()
+                st.success(f"✅ {TARGET_MONTH} 데이터 처리가 완료되었습니다.")
+                
+                tab_res1, tab_res2 = st.tabs(["📋 요약 테이블 (Pivot)", "📄 RAW 데이터"])
+                
+                with tab_res1:
+                    st.subheader(f"{TARGET_MONTH} 수집 결과 (요약)")
+                    st.dataframe(df_pivot, use_container_width=True)
+                    
+                    # CSV 다운로드
+                    csv = df_pivot.to_csv(index=False, encoding='utf-8-sig')
+                    st.download_button(
+                        label="💾 수집 결과 다운로드 (CSV)",
+                        data=csv,
+                        file_name=f"insurance_solvency_{TARGET_MONTH}_result.csv",
+                        mime="text/csv"
+                    )
+
+                with tab_res2:
+                    st.subheader(f"{TARGET_MONTH} RAW 데이터")
+                    st.dataframe(df, use_container_width=True)
+                
+                # 수집이 완료되었으니 화면 갱신을 유도하거나 정보를 제공
+                st.info("💡 새로운 데이터가 저장되었습니다. '분석 대시보드' 탭으로 이동하여 차트를 확인해 보세요.")
+            else:
+                st.warning("수집된 데이터가 없습니다. API Key나 기준년월을 확인해주세요.")
