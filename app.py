@@ -7,6 +7,8 @@ import json
 import time
 import duckdb
 import os
+import plotly.graph_objects as go
+import plotly.express as px
 
 # Streamlit 페이지 설정
 st.set_page_config(
@@ -116,6 +118,69 @@ def save_to_md(df):
             conn.close()
         except Exception as e:
             st.error(f"데이터 저장 실패: {e}")
+
+def load_kics_analysis_data():
+    """K-ICS 분석을 위한 전체 데이터 로드 및 계산"""
+    conn = get_md_connection()
+    if not conn:
+        return pd.DataFrame()
+    
+    try:
+        # 관심 있는 계정들만 필터링해서 가져오기
+        target_accounts = [
+            '지급여력금액(경과조치 적용 전)', 
+            '지급여력기준금액(경과조치 적용 전)',
+            '지급여력금액(경과조치 적용 후)', 
+            '지급여력기준금액(경과조치 적용 후)'
+        ]
+        # IN 절 파라미터 생성
+        placeholders = ', '.join(['?' for _ in target_accounts])
+        query = f"SELECT * FROM {TABLE_NAME} WHERE 계정명 IN ({placeholders})"
+        df = conn.execute(query, target_accounts).df()
+        conn.close()
+        
+        if df.empty:
+            return pd.DataFrame()
+
+        # 피벗하여 계산하기 쉽게 변환
+        pdf = df.pivot_table(
+            index=['구분', '기준년월', '회사명'],
+            columns='계정명',
+            values='값',
+            aggfunc='sum'
+        ).reset_index()
+        
+        # 필요한 컬럼이 있는지 확인 (없으면 0으로 채움)
+        for col in target_accounts:
+            if col not in pdf.columns:
+                pdf[col] = 0
+
+        # 그룹별 합계 계산 (생명보험, 손해보험, 전체)
+        # 1. 생명/손해별 합계
+        grouped = pdf.groupby(['구분', '기준년월'])[target_accounts].sum().reset_index()
+        
+        # 2. 전체(Total) 합계 생성
+        total = pdf.groupby(['기준년월'])[target_accounts].sum().reset_index()
+        total['구분'] = '전체'
+        
+        # 결합
+        final_df = pd.concat([grouped, total], ignore_index=True)
+        
+        # K-ICS 비율 계산 (%)
+        # 경과조치 전
+        final_df['ratio_before'] = (final_df['지급여력금액(경과조치 적용 전)'] / 
+                                    final_df['지급여력기준금액(경과조치 적용 전)'].replace(0, pd.NA)) * 100
+        # 경과조치 후
+        final_df['ratio_after'] = (final_df['지급여력금액(경과조치 적용 후)'] / 
+                                   final_df['지급여력기준금액(경과조치 적용 후)'].replace(0, pd.NA)) * 100
+        
+        # 정렬 (날짜순)
+        final_df = final_df.sort_values('기준년월')
+        
+        return final_df
+    except Exception as e:
+        st.error(f"분석 데이터 로드 실패: {e}")
+        return pd.DataFrame()
 
 # ==========================================
 # 2. 비동기 통신 함수 정의
@@ -344,7 +409,7 @@ if st.button("데이터 수집 시작 (Start)", type="primary"):
             ).reset_index()
 
             # 결과 탭 구성
-            tab1, tab2 = st.tabs(["📋 요약 테이블 (Pivot)", "raw 원본 데이터"])
+            tab1, tab2, tab3 = st.tabs(["📋 요약 테이블 (Pivot)", "📊 시각화 분석 (Charts)", "raw 원본 데이터"])
 
             with tab1:
                 st.subheader("결과 데이터")
@@ -360,6 +425,59 @@ if st.button("데이터 수집 시작 (Start)", type="primary"):
                 )
 
             with tab2:
+                st.subheader("📈 K-ICS 비율 추이 분석 (MotherDuck 데이터 기반)")
+                analysis_df = load_kics_analysis_data()
+                
+                if not analysis_df.empty:
+                    # Plotly 차트 생성
+                    fig = go.Figure()
+                    
+                    # 색상 및 스타일 설정
+                    styles = {
+                        '생명보험': {'color': '#1f77b4'},
+                        '손해보험': {'color': '#ff7f0e'},
+                        '전체': {'color': '#2ca02c'}
+                    }
+                    
+                    for g in ['생명보험', '손해보험', '전체']:
+                        g_df = analysis_df[analysis_df['구분'] == g]
+                        
+                        # 경과조치 적용 전 (점선)
+                        fig.add_trace(go.Scatter(
+                            x=g_df['기준년월'], 
+                            y=g_df['ratio_before'],
+                            name=f"{g} (경과조치 전)",
+                            line=dict(color=styles[g]['color'], dash='dot', width=2),
+                            mode='lines+markers'
+                        ))
+                        
+                        # 경과조치 적용 후 (실선)
+                        fig.add_trace(go.Scatter(
+                            x=g_df['기준년월'], 
+                            y=g_df['ratio_after'],
+                            name=f"{g} (경과조치 후)",
+                            line=dict(color=styles[g]['color'], width=4),
+                            mode='lines+markers'
+                        ))
+                    
+                    fig.update_layout(
+                        title="구분별 K-ICS 비율 추이",
+                        xaxis_title="기준년월",
+                        yaxis_title="K-ICS Ratio (%)",
+                        legend_title="구분",
+                        template="plotly_white",
+                        hovermode="x unified"
+                    )
+                    
+                    st.plotly_chart(fig, use_container_width=True)
+                    
+                    # 분석 데이터 테이블
+                    with st.expander("📍 계산된 수치 데이터 보기"):
+                        st.dataframe(analysis_df, use_container_width=True)
+                else:
+                    st.info("시각화를 위한 시계열 데이터가 MotherDuck에 부족합니다. 더 많은 기준년월 데이터를 수집해 주세요.")
+
+            with tab3:
                 st.dataframe(df, use_container_width=True)
         else:
             st.warning("수집된 데이터가 없습니다. API Key나 기준년월을 확인해주세요.")
