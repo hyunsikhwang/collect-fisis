@@ -7,11 +7,12 @@ import json
 import time
 import duckdb
 import os
-import plotly.graph_objects as go
-import plotly.express as px
 import requests
 from datetime import datetime
 from pytz import timezone
+from streamlit_echarts import st_pyecharts
+from pyecharts import options as opts
+from pyecharts.charts import Line
 
 # Streamlit 페이지 설정
 st.set_page_config(
@@ -455,84 +456,98 @@ with main_tab1:
     analysis_df = load_kics_analysis_data()
     
     if not analysis_df.empty:
-        # Plotly 차트 생성
-        fig = go.Figure()
+        # ECharts용 데이터 준비
+        x_data = sorted(analysis_df['기준년월'].unique().tolist())
         
-        # 색상 및 스타일 설정
-        styles = {
-            '생명보험': {'color': '#1f77b4'},
-            '손해보험': {'color': '#ff7f0e'},
-            '전체': {'color': '#2ca02c'}
+        # 금리 데이터 가져오기
+        min_month = analysis_df['기준년월'].min()
+        max_month = analysis_df['기준년월'].max()
+        bond_df = fetch_ecos_bond_yield(min_month, max_month)
+        
+        # 금리 데이터 싱크 맞추기
+        if not bond_df.empty:
+            kics_months = analysis_df['기준년월'].unique()
+            bond_df = bond_df[bond_df['기준년월'].isin(kics_months)].sort_values('기준년월')
+        
+        # pyecharts Line 객체 생성
+        line = Line(init_opts=opts.InitOpts(width="100%", height="600px", theme="white"))
+        line.add_xaxis(xaxis_data=x_data)
+        
+        # 색상 매핑
+        colors = {
+            '생명보험': '#1f77b4',
+            '손해보험': '#ff7f0e',
+            '전체': '#2ca02c'
         }
         
         for g in ['생명보험', '손해보험', '전체']:
-            g_df = analysis_df[analysis_df['구분'] == g]
+            # x축 순서에 맞춰 정렬 및 누락값 처리
+            g_df = analysis_df[analysis_df['구분'] == g].set_index('기준년월').reindex(x_data).reset_index()
             
-            # 경과조치 적용 전 (점선)
-            fig.add_trace(go.Scatter(
-                x=g_df['기준년월'], 
-                y=g_df['ratio_before'],
-                name=f"{g} (경과조치 전)",
-                line=dict(color=styles[g]['color'], dash='dot', width=2),
-                mode='markers+lines',
-                marker=dict(size=8),
-                visible='legendonly' # 기본값으로 숨김 (범례 클릭 시 표시)
-            ))
+            # 경과조치 후 (실선)
+            line.add_yaxis(
+                series_name=f"{g} (경과조치 후)",
+                y_axis=[round(float(v), 2) if pd.notnull(v) else None for v in g_df['ratio_after']],
+                symbol="circle",
+                symbol_size=10,
+                linestyle_opts=opts.LineStyleOpts(width=4, color=colors[g]),
+                itemstyle_opts=opts.ItemStyleOpts(color=colors[g]),
+                label_opts=opts.LabelOpts(is_show=False),
+                is_smooth=True,
+            )
             
-            # 경과조치 적용 후 (실선)
-            fig.add_trace(go.Scatter(
-                x=g_df['기준년월'], 
-                y=g_df['ratio_after'],
-                name=f"{g} (경과조치 후)",
-                line=dict(color=styles[g]['color'], width=4),
-                mode='markers+lines',
-                marker=dict(size=10)
-            ))
-        
-        fig.update_layout(
-            title="보험업권별 K-ICS 비율 및 국고채 10년 금리 추이",
-            xaxis_title="기준년월",
-            yaxis_title="K-ICS Ratio (%)",
-            yaxis2=dict(
-                title="국고채 10년 금리 (%)",
-                overlaying='y',
-                side='right',
-                showgrid=False
-            ),
-            legend_title="구분",
-            template="plotly_white",
-            hovermode="x unified",
-            height=600,
-            xaxis=dict(type='category', categoryorder='category ascending'),
-            yaxis=dict(ticksuffix="%")
+            # 경과조치 전 (점선, 초기 비활성화)
+            line.add_yaxis(
+                series_name=f"{g} (경과조치 전)",
+                y_axis=[round(float(v), 2) if pd.notnull(v) else None for v in g_df['ratio_before']],
+                is_selected=False, # 초기 비활성화
+                symbol="circle",
+                symbol_size=8,
+                linestyle_opts=opts.LineStyleOpts(width=2, type_="dashed", color=colors[g]),
+                itemstyle_opts=opts.ItemStyleOpts(color=colors[g]),
+                label_opts=opts.LabelOpts(is_show=False),
+                is_smooth=True,
+            )
+            
+        # 보조축 추가 (금리용)
+        line.extend_axis(
+            yaxis=opts.AxisOpts(
+                name="금리 (%)",
+                type_="value",
+                position="right",
+                axislabel_opts=opts.LabelOpts(formatter="{value}%"),
+                splitline_opts=opts.SplitLineOpts(is_show=False),
+            )
         )
-
-        # ECOS 금리 데이터 추가
-        min_month = analysis_df['기준년월'].min()
-        max_month = analysis_df['기준년월'].max()
-        
-        bond_df = fetch_ecos_bond_yield(min_month, max_month)
         
         if not bond_df.empty:
-            # K-ICS 데이터가 있는 기준년월만 필터링 (X축 정렬 및 싱크 일치)
-            kics_months = analysis_df['기준년월'].unique()
-            bond_df = bond_df[bond_df['기준년월'].isin(kics_months)].sort_values('기준년월')
+            b_df = bond_df.set_index('기준년월').reindex(x_data).reset_index()
+            line.add_yaxis(
+                series_name="국고채 10년 (우축)",
+                y_axis=[round(float(v), 3) if pd.notnull(v) else None for v in b_df['yield']],
+                yaxis_index=1,
+                symbol="diamond",
+                symbol_size=12,
+                linestyle_opts=opts.LineStyleOpts(width=2, type_="dashed", color="#6e7074"),
+                itemstyle_opts=opts.ItemStyleOpts(color="#6e7074"),
+                label_opts=opts.LabelOpts(is_show=False),
+            )
             
-            if not bond_df.empty:
-                fig.add_trace(go.Scatter(
-                    x=bond_df['기준년월'],
-                    y=bond_df['yield'],
-                    name="국고채 10년 (우축)",
-                    line=dict(color='gray', width=3, dash='dash'),
-                    yaxis='y2',
-                    mode='lines+markers',
-                    marker=dict(symbol='diamond', size=10)
-                ))
-        else:
-            if not st.secrets.get("ECOS_API_KEY"):
-                st.caption("ℹ️ ECOS_API_KEY를 설정하면 국고채 금리를 함께 보실 수 있습니다.")
+        line.set_global_opts(
+            title_opts=opts.TitleOpts(title="보험업권별 K-ICS 비율 및 국고채 10년 금리 추이", subtitle="기준년월별 현황"),
+            tooltip_opts=opts.TooltipOpts(trigger="axis", axis_pointer_type="cross"),
+            xaxis_opts=opts.AxisOpts(name="기준년월", type_="category", boundary_gap=True),
+            yaxis_opts=opts.AxisOpts(
+                name="K-ICS 비율 (%)",
+                axislabel_opts=opts.LabelOpts(formatter="{value}%"),
+                splitline_opts=opts.SplitLineOpts(is_show=True),
+            ),
+            legend_opts=opts.LegendOpts(pos_top="bottom", orient="horizontal"),
+            datazoom_opts=[opts.DataZoomOpts(), opts.DataZoomOpts(type_="inside")],
+            toolbox_opts=opts.ToolboxOpts(is_show=True),
+        )
         
-        st.plotly_chart(fig, use_container_width=True)
+        st_pyecharts(line, height="600px")
         
         # 분석 데이터 테이블
         with st.expander("📍 상세 수치 데이터 확인"):

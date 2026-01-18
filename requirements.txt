@@ -6,3 +6,5 @@ duckdb
 plotly
 requests
 pytz
+streamlit-echarts
+pyecharts
