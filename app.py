@@ -514,6 +514,7 @@ with main_tab1:
                 name="금리 (%)",
                 type_="value",
                 position="right",
+                is_scale=True, # 데이터 범위에 맞춰 유동적 조정
                 axislabel_opts=opts.LabelOpts(formatter="{value}%"),
                 splitline_opts=opts.SplitLineOpts(is_show=False),
             )
@@ -541,13 +542,17 @@ with main_tab1:
             xaxis_opts=opts.AxisOpts(name="기준년월", type_="category", boundary_gap=True),
             yaxis_opts=opts.AxisOpts(
                 name="K-ICS 비율 (%)",
+                is_scale=True, # 데이터 범위에 맞춰 유동적 조정
                 axislabel_opts=opts.LabelOpts(formatter="{value}%"),
                 splitline_opts=opts.SplitLineOpts(is_show=True),
             ),
             legend_opts=opts.LegendOpts(
-                pos_top="bottom", 
-                orient="horizontal",
-                selected_map=selected_map
+                pos_right="5%", 
+                pos_top="5%",
+                orient="vertical", # 차트 내부 가독성을 위해 세로 배치
+                selected_map=selected_map,
+                background_color="rgba(255,255,255,0.7)", # 약간의 배경 투명도
+                border_color="#ccc"
             ),
             datazoom_opts=[opts.DataZoomOpts(), opts.DataZoomOpts(type_="inside")],
             toolbox_opts=opts.ToolboxOpts(is_show=True),
