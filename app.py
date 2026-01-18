@@ -554,7 +554,10 @@ with main_tab1:
                 background_color="rgba(255,255,255,0.7)", # 약간의 배경 투명도
                 border_color="#ccc"
             ),
-            datazoom_opts=[opts.DataZoomOpts(), opts.DataZoomOpts(type_="inside")],
+            datazoom_opts=[
+                opts.DataZoomOpts(start=0, end=100), 
+                opts.DataZoomOpts(type_="inside", start=0, end=100)
+            ],
             toolbox_opts=opts.ToolboxOpts(is_show=True),
         )
         
