@@ -40,7 +40,7 @@ else:
 
 TARGET_MONTH = st.sidebar.text_input(
     "기준년월 (YYYYMM)", 
-    value="202506",
+    value="202509",
     help="조회하고 싶은 년월을 입력하세요."
 )
 
@@ -133,14 +133,39 @@ def load_kics_analysis_data():
             '지급여력금액(경과조치 적용 후)', 
             '지급여력기준금액(경과조치 적용 후)'
         ]
+        
+        # 1. 먼저 DB에 있는 모든 독특한 계정명 확인 (디버깅용)
+        all_accounts = conn.execute(f"SELECT DISTINCT 계정명 FROM {TABLE_NAME}").df()['계정명'].tolist()
+        
+        # 2. 유사한 계정명 매핑 (공백 제거 후 비교 등)
+        def find_best_match(target, candidates):
+            target_clean = target.replace(" ", "")
+            for c in candidates:
+                if c.replace(" ", "") == target_clean:
+                    return c
+            return target
+
+        actual_targets = [find_best_match(t, all_accounts) for t in target_accounts]
+        
         # IN 절 파라미터 생성
-        placeholders = ', '.join(['?' for _ in target_accounts])
+        placeholders = ', '.join(['?' for _ in actual_targets])
         query = f"SELECT * FROM {TABLE_NAME} WHERE 계정명 IN ({placeholders})"
-        df = conn.execute(query, target_accounts).df()
+        df = conn.execute(query, actual_targets).df()
         conn.close()
         
+        # 디버깅 정보 (UI 표시용은 아니나 필요시 st.write로 활용 가능)
+        # st.write(f"Targets: {actual_targets}")
+        # st.write(f"Rows found: {len(df)}")
+
         if df.empty:
             return pd.DataFrame()
+
+        # 데이터 클리닝: 기준년월 형식이 제각각일 수 있으므로 문자열로 정규화
+        df['기준년월'] = df['기준년월'].astype(str).str.strip()
+        
+        # 매핑용 사전 생성 (원래 이름으로 통일)
+        name_map = dict(zip(actual_targets, target_accounts))
+        df['계정명'] = df['계정명'].map(name_map)
 
         # 피벗하여 계산하기 쉽게 변환
         pdf = df.pivot_table(
@@ -476,6 +501,28 @@ if st.button("데이터 수집 시작 (Start)", type="primary"):
                         st.dataframe(analysis_df, use_container_width=True)
                 else:
                     st.info("시각화를 위한 시계열 데이터가 MotherDuck에 부족합니다. 더 많은 기준년월 데이터를 수집해 주세요.")
+                    
+                    # 디버깅을 위한 데이터 현황 세션
+                    with st.expander("🛠️ 데이터베이스 현황 확인 (디버깅)"):
+                        conn = get_md_connection()
+                        if conn:
+                            try:
+                                count = conn.execute(f"SELECT COUNT(*) FROM {TABLE_NAME}").fetchone()[0]
+                                st.write(f"현재 총 레코드 수: {count}건")
+                                
+                                st.write("보관 중인 계정명 목록:")
+                                distinct_accounts = conn.execute(f"SELECT DISTINCT 계정명 FROM {TABLE_NAME}").df()
+                                st.dataframe(distinct_accounts)
+                                
+                                st.write("보관 중인 기준년월 목록:")
+                                distinct_months = conn.execute(f"SELECT DISTINCT 기준년월 FROM {TABLE_NAME} ORDER BY 기준년월").df()
+                                st.dataframe(distinct_months)
+                                
+                                conn.close()
+                            except Exception as e:
+                                st.error(f"현황 확인 중 오류: {e}")
+                        else:
+                            st.warning("MotherDuck 연결 실패 (토큰 확인 필요)")
 
             with tab3:
                 st.dataframe(df, use_container_width=True)
