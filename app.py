@@ -180,13 +180,6 @@ def load_kics_analysis_data():
         if show_debug:
             st.write("DEBUG: 피벗 후 데이터 컬럼:", pdf.columns.tolist())
             st.write("DEBUG: 피벗 후 데이터 수:", len(pdf))
-        pdf = df.pivot_table(
-            index=['구분', '기준년월', '회사명'],
-            columns='계정명',
-            values='값',
-            aggfunc='sum'
-        ).reset_index()
-        
         # 필요한 컬럼이 있는지 확인 (없으면 0으로 채움)
         for col in target_accounts:
             if col not in pdf.columns:
@@ -509,6 +502,7 @@ with main_tab1:
             template="plotly_white",
             hovermode="x unified",
             height=600,
+            xaxis=dict(type='category', categoryorder='category ascending'),
             yaxis=dict(ticksuffix="%")
         )
 
@@ -519,18 +513,20 @@ with main_tab1:
         bond_df = fetch_ecos_bond_yield(min_month, max_month)
         
         if not bond_df.empty:
-            # 시각화 기간에 맞게 필터링
-            bond_df = bond_df[(bond_df['기준년월'] >= min_month) & (bond_df['기준년월'] <= max_month)]
+            # K-ICS 데이터가 있는 기준년월만 필터링 (X축 정렬 및 싱크 일치)
+            kics_months = analysis_df['기준년월'].unique()
+            bond_df = bond_df[bond_df['기준년월'].isin(kics_months)].sort_values('기준년월')
             
-            fig.add_trace(go.Scatter(
-                x=bond_df['기준년월'],
-                y=bond_df['yield'],
-                name="국고채 10년 (우축)",
-                line=dict(color='gray', width=3, dash='dash'),
-                yaxis='y2',
-                mode='lines+markers',
-                marker=dict(symbol='diamond', size=10)
-            ))
+            if not bond_df.empty:
+                fig.add_trace(go.Scatter(
+                    x=bond_df['기준년월'],
+                    y=bond_df['yield'],
+                    name="국고채 10년 (우축)",
+                    line=dict(color='gray', width=3, dash='dash'),
+                    yaxis='y2',
+                    mode='lines+markers',
+                    marker=dict(symbol='diamond', size=10)
+                ))
         else:
             if not st.secrets.get("ECOS_API_KEY"):
                 st.caption("ℹ️ ECOS_API_KEY를 설정하면 국고채 금리를 함께 보실 수 있습니다.")
