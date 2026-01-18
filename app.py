@@ -11,6 +11,7 @@ import plotly.graph_objects as go
 import plotly.express as px
 import requests
 from datetime import datetime
+from pytz import timezone
 
 # Streamlit 페이지 설정
 st.set_page_config(
