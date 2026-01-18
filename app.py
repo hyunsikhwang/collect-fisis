@@ -134,18 +134,31 @@ def load_kics_analysis_data():
             '지급여력기준금액(경과조치 적용 후)'
         ]
         
-        # 1. 먼저 DB에 있는 모든 독특한 계정명 확인 (디버깅용)
-        all_accounts = conn.execute(f"SELECT DISTINCT 계정명 FROM {TABLE_NAME}").df()['계정명'].tolist()
+        # [DEBUG] 디버깅 옵션 (Dashboard 상단에 표시됨)
+        show_debug = st.checkbox("🔍 상세 데이터 추출 과정 확인 (디버거)", value=False)
         
-        # 2. 유사한 계정명 매핑 (공백 제거 후 비교 등)
+        # 1. DB에 있는 모든 독특한 계정명 확인
+        all_accounts = conn.execute(f"SELECT DISTINCT 계정명 FROM {TABLE_NAME}").df()['계정명'].tolist()
+        if show_debug:
+            st.write(f"DEBUG: DB 내 총 계정 수: {len(all_accounts)}")
+            st.write(f"DEBUG: DB 내 계정 샘플: {all_accounts[:5]}")
+        
+        # 2. 유사한 계정명 매핑 (공백 제거 및 부분 일치 검색으로 강화)
         def find_best_match(target, candidates):
             target_clean = target.replace(" ", "")
+            # 완전 일치(공백 제거)
             for c in candidates:
                 if c.replace(" ", "") == target_clean:
+                    return c
+            # 부분 일치 검색
+            for c in candidates:
+                if target_clean in c.replace(" ", "") or c.replace(" ", "") in target_clean:
                     return c
             return target
 
         actual_targets = [find_best_match(t, all_accounts) for t in target_accounts]
+        if show_debug:
+            st.write(f"DEBUG: 매핑된 타겟 계정: {actual_targets}")
         
         # IN 절 파라미터 생성
         placeholders = ', '.join(['?' for _ in actual_targets])
@@ -153,21 +166,34 @@ def load_kics_analysis_data():
         df = conn.execute(query, actual_targets).df()
         conn.close()
         
-        # 디버깅 정보 (UI 표시용은 아니나 필요시 st.write로 활용 가능)
-        # st.write(f"Targets: {actual_targets}")
-        # st.write(f"Rows found: {len(df)}")
+        if show_debug:
+            st.write(f"DEBUG: 조회된 로우 수: {len(df)}")
 
         if df.empty:
             return pd.DataFrame()
 
-        # 데이터 클리닝: 기준년월 형식이 제각각일 수 있으므로 문자열로 정규화
+        # 데이터 클리닝
         df['기준년월'] = df['기준년월'].astype(str).str.strip()
         
         # 매핑용 사전 생성 (원래 이름으로 통일)
         name_map = dict(zip(actual_targets, target_accounts))
         df['계정명'] = df['계정명'].map(name_map)
+        
+        if show_debug:
+            st.write("DEBUG: 계정명 매핑 후 데이터 샘플:", df.head())
 
         # 피벗하여 계산하기 쉽게 변환
+        # 계정명이 중복될 수 있으므로 (동일 회사가 같은 달에 여러번 수집된 경우 등) sum으로 집계
+        pdf = df.pivot_table(
+            index=['구분', '기준년월', '회사명'],
+            columns='계정명',
+            values='값',
+            aggfunc='sum'
+        ).reset_index()
+        
+        if show_debug:
+            st.write("DEBUG: 피벗 후 데이터 컬럼:", pdf.columns.tolist())
+            st.write("DEBUG: 피벗 후 데이터 수:", len(pdf))
         pdf = df.pivot_table(
             index=['구분', '기준년월', '회사명'],
             columns='계정명',
