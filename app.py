@@ -52,6 +52,7 @@ MAX_CONCURRENT_REQUESTS = 20
 MD_TOKEN = st.secrets.get("MOTHERDUCK_TOKEN", "")
 DB_NAME = "fisis_cache"
 TABLE_NAME = "insurance_stats"
+COLUMNS = ['구분', '회사코드', '회사명', '계정코드', '계정명', '기준년월', '단위', '값']
 
 def get_md_connection():
     """MotherDuck 연결 설정"""
@@ -102,9 +103,16 @@ def save_to_md(df):
     conn = get_md_connection()
     if conn:
         try:
+            # 컬럼 순서 고정 및 데이터 클리닝
+            df_to_save = df[COLUMNS].copy()
+            for col in ['회사코드', '계정코드', '기준년월']:
+                df_to_save[col] = df_to_save[col].astype(str).str.strip()
+
             # 임시 뷰를 생성하여 데이터를 적재
-            conn.register("df_to_save", df)
-            conn.execute(f"INSERT INTO {TABLE_NAME} SELECT *, CURRENT_TIMESTAMP FROM df_to_save")
+            conn.register("df_to_save", df_to_save)
+            # 명시적으로 컬럼을 지정하여 INSERT (순서 일관성 보장)
+            col_names = ", ".join(COLUMNS) + ", 수집일시"
+            conn.execute(f"INSERT INTO {TABLE_NAME} ({col_names}) SELECT *, CURRENT_TIMESTAMP FROM df_to_save")
             conn.close()
         except Exception as e:
             st.error(f"데이터 저장 실패: {e}")
@@ -233,17 +241,22 @@ async def run_async_collection():
             semaphore = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
             
             status_container.write("📦 2. 미수집 데이터 확인 및 요청 생성 중...")
-            
+            # 기존 데이터 키 생성 (회사코드, 계정코드)
             existing_keys = set()
             if not cached_df.empty:
-                # 데이터 타입을 문자열로 강제 변환하여 비교 (캐시 미스 방지)
-                existing_keys = set(zip(cached_df['회사코드'].astype(str), cached_df['계정코드'].astype(str)))
+                # 데이터 타입을 문자열로 강제 변환 및 공백 제거 (캐시 미스 방지)
+                existing_keys = set(zip(
+                    cached_df['회사코드'].astype(str).str.strip(), 
+                    cached_df['계정코드'].astype(str).str.strip()
+                ))
 
             def build_tasks(companies, accounts):
                 for comp in companies:
                     for acc in accounts:
-                        # 비교 시에도 문자열로 변환
-                        if (str(comp['financeCd']), str(acc['accountCd'])) not in existing_keys:
+                        # 비교 시에도 문자열로 변환 및 공백 제거
+                        f_cd = str(comp['financeCd']).strip()
+                        a_cd = str(acc['accountCd']).strip()
+                        if (f_cd, a_cd) not in existing_keys:
                             tasks.append(fetch_statistics(session, semaphore, comp, acc, None, None))
 
             build_tasks(life_companies, life_accounts)
@@ -256,7 +269,7 @@ async def run_async_collection():
                 status_container.update(label="✅ 캐시 데이터 리로드 완료!", state="complete", expanded=False)
                 return cached_df.to_dict('records')
 
-            status_container.write(f"📡 총 {total_tasks} 건의 새로운 데이터를 API로 수집합니다...")
+            status_container.write(f"📡 {len(existing_keys)}건은 캐시에서 발견했고, {total_tasks} 건의 새로운 데이터를 API로 수집합니다...")
 
             # 3. 실행 및 진행률 표시
             new_results = []
@@ -282,9 +295,8 @@ async def run_async_collection():
                 
                 # 기존 데이터와 합치기
                 if not cached_df.empty:
-                    # 수집일시 컬럼 제외하고 합치기 (cached_df에는 수집일시가 있을 수 있음)
-                    cols = ['구분', '회사코드', '회사명', '계정코드', '계정명', '기준년월', '단위', '값']
-                    all_results_df = pd.concat([cached_df[cols], new_df[cols]], ignore_index=True)
+                    # 컬럼 순서 및 이름 일관성 확보
+                    all_results_df = pd.concat([cached_df[COLUMNS], new_df[COLUMNS]], ignore_index=True)
                     results = all_results_df.to_dict('records')
                 else:
                     results = new_results
