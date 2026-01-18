@@ -475,7 +475,8 @@ with main_tab1:
                 name=f"{g} (경과조치 전)",
                 line=dict(color=styles[g]['color'], dash='dot', width=2),
                 mode='markers+lines',
-                marker=dict(size=8)
+                marker=dict(size=8),
+                visible='legendonly' # 기본값으로 숨김 (범례 클릭 시 표시)
             ))
             
             # 경과조치 적용 후 (실선)
