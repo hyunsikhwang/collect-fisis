@@ -2,3 +2,4 @@ streamlit
 aiohttp
 pandas
 nest_asyncio
+duckdb

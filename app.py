@@ -5,6 +5,8 @@ import pandas as pd
 import nest_asyncio
 import json
 import time
+import duckdb
+import os
 
 # Streamlit 페이지 설정
 st.set_page_config(
@@ -43,6 +45,66 @@ TARGET_MONTH = st.sidebar.text_input(
 TERM = "Q" # 분기
 BASE_URL = "http://fisis.fss.or.kr/openapi"
 MAX_CONCURRENT_REQUESTS = 20
+
+# ==========================================
+# 1.5. MotherDuck DB 설정
+# ==========================================
+MD_TOKEN = st.secrets.get("MOTHERDUCK_TOKEN", "")
+DB_NAME = "fisis_cache"
+TABLE_NAME = "insurance_stats"
+
+def get_md_connection():
+    """MotherDuck 연결 설정"""
+    if not MD_TOKEN:
+        return None
+    try:
+        # MotherDuck 연결 (md: 뒤에 토큰이 없으면 st.secrets에서 가져오거나 환경변수 확인)
+        conn = duckdb.connect(f"md:{DB_NAME}?motherduck_token={MD_TOKEN}")
+        # 테이블이 없으면 생성
+        conn.execute(f"""
+            CREATE TABLE IF NOT EXISTS {TABLE_NAME} (
+                구분 VARCHAR,
+                회사코드 VARCHAR,
+                회사명 VARCHAR,
+                계정코드 VARCHAR,
+                계정명 VARCHAR,
+                기준년월 VARCHAR,
+                단위 VARCHAR,
+                값 DOUBLE,
+                수집일시 TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        return conn
+    except Exception as e:
+        st.error(f"MotherDuck 연결 오류: {e}")
+        return None
+
+def get_cached_data(target_month):
+    """MotherDuck에서 기존 데이터 조회"""
+    conn = get_md_connection()
+    if conn:
+        try:
+            df = conn.execute(f"SELECT * FROM {TABLE_NAME} WHERE 기준년월 = ?", [target_month]).df()
+            conn.close()
+            return df
+        except Exception as e:
+            st.warning(f"데이터 캐시 조회 실패: {e}")
+            return pd.DataFrame()
+    return pd.DataFrame()
+
+def save_to_md(df):
+    """데이터를 MotherDuck에 저장"""
+    if df.empty:
+        return
+    conn = get_md_connection()
+    if conn:
+        try:
+            # 임시 뷰를 생성하여 데이터를 적재
+            conn.register("df_to_save", df)
+            conn.execute(f"INSERT INTO {TABLE_NAME} SELECT * EXCLUDE(수집일시), CURRENT_TIMESTAMP FROM df_to_save")
+            conn.close()
+        except Exception as e:
+            st.error(f"데이터 저장 실패: {e}")
 
 # ==========================================
 # 2. 비동기 통신 함수 정의
@@ -136,9 +198,16 @@ async def fetch_statistics(session, semaphore, company, account, pbar, status_te
 # 3. 메인 실행 로직 (Async Wrapper)
 # ==========================================
 async def run_async_collection():
-    status_container = st.status("🚀 데이터 수집을 준비합니다...", expanded=True)
+    status_container = st.status("🚀 데이터 수집 및 캐시 확인 중...", expanded=True)
     
     try:
+        # 0. MotherDuck 캐시 확인
+        status_container.write(f"🔎 {TARGET_MONTH} 데이터 캐시 확인 중...")
+        cached_df = get_cached_data(TARGET_MONTH)
+        
+        if not cached_df.empty:
+            status_container.write(f"✅ {len(cached_df)}건의 데이터를 MotherDuck에서 로드했습니다.")
+        
         async with aiohttp.ClientSession() as session:
             # 1. 목록 조회
             status_container.write("🔍 1. 금융회사 및 계정항목 목록 조회 중...")
@@ -154,41 +223,69 @@ async def run_async_collection():
             total_companies = len(life_companies) + len(non_life_companies)
             status_container.write(f"✅ 회사 목록 확보: 총 {total_companies}개")
 
-            # 2. 작업 생성
+            # 2. 작업 생성 (캐시에 없는 것만)
             tasks = []
             semaphore = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
             
-            status_container.write("📦 2. 통계 데이터 요청 생성 중...")
+            status_container.write("📦 2. 미수집 데이터 확인 및 요청 생성 중...")
             
-            for comp in life_companies:
-                for acc in life_accounts:
-                    tasks.append(fetch_statistics(session, semaphore, comp, acc, None, None))
-            for comp in non_life_companies:
-                for acc in non_life_accounts:
-                    tasks.append(fetch_statistics(session, semaphore, comp, acc, None, None))
+            # 기존 데이터 키 생성 (회사코드, 계정코드)
+            existing_keys = set()
+            if not cached_df.empty:
+                existing_keys = set(zip(cached_df['회사코드'], cached_df['계정코드']))
+
+            def build_tasks(companies, accounts):
+                for comp in companies:
+                    for acc in accounts:
+                        if (comp['financeCd'], acc['accountCd']) not in existing_keys:
+                            tasks.append(fetch_statistics(session, semaphore, comp, acc, None, None))
+
+            build_tasks(life_companies, life_accounts)
+            build_tasks(non_life_companies, non_life_accounts)
 
             total_tasks = len(tasks)
-            status_container.write(f"📡 총 {total_tasks} 건의 API 호출을 시작합니다...")
+            
+            if total_tasks == 0:
+                status_container.write("✨ 모든 데이터가 이미 캐시되어 있습니다.")
+                status_container.update(label="✅ 캐시 데이터 리로드 완료!", state="complete", expanded=False)
+                return cached_df.to_dict('records')
+
+            status_container.write(f"📡 총 {total_tasks} 건의 새로운 데이터를 API로 수집합니다...")
 
             # 3. 실행 및 진행률 표시
-            results = []
+            new_results = []
             progress_bar = status_container.progress(0)
-            
-            # as_completed를 사용하여 완료되는대로 진행률 업데이트
             completed_count = 0
             
-            # 청크 단위로 나누어 UI 업데이트 부하 줄이기 (선택 사항이나 여기서는 실시간성 유지)
             for f in asyncio.as_completed(tasks):
                 res = await f
                 if res:
-                    results.append(res)
+                    new_results.append(res)
                 
                 completed_count += 1
-                # 진행률 업데이트 (0.0 ~ 1.0)
                 if total_tasks > 0:
                     progress_bar.progress(completed_count / total_tasks)
 
-            status_container.update(label="✅ 데이터 수집 완료!", state="complete", expanded=False)
+            # 4. 새로운 데이터 DB 저장
+            if new_results:
+                status_container.write(f"💾 {len(new_results)}건의 새로운 데이터를 MotherDuck에 저장 중...")
+                new_df = pd.DataFrame(new_results)
+                # 값 전처리 (저장 전 숫자로 변환)
+                new_df['값'] = pd.to_numeric(new_df['값'].astype(str).str.replace(',', ''), errors='coerce')
+                save_to_md(new_df)
+                
+                # 기존 데이터와 합치기
+                if not cached_df.empty:
+                    # 수집일시 컬럼 제외하고 합치기 (cached_df에는 수집일시가 있을 수 있음)
+                    cols = ['구분', '회사코드', '회사명', '계정코드', '계정명', '기준년월', '단위', '값']
+                    all_results_df = pd.concat([cached_df[cols], new_df[cols]], ignore_index=True)
+                    results = all_results_df.to_dict('records')
+                else:
+                    results = new_results
+            else:
+                results = cached_df.to_dict('records')
+
+            status_container.update(label="✅ 데이터 수집 및 캐싱 완료!", state="complete", expanded=False)
             return results
 
     except Exception as e:
