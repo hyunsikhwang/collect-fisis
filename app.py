@@ -264,8 +264,6 @@ def shorten_company_name(name):
         short_name = short_name.replace(r, "")
     
     return short_name.strip()
-    
-    return short_name.strip()
 
 def get_available_months():
     """DB에 저장된 모든 기준년월 목록을 내림차순으로 반환"""
@@ -332,7 +330,7 @@ def load_company_solvency_data(target_month):
             lambda r: f"{r['회사명']}*" if r['is_fallback'] else r['회사명'], axis=1
         )
 
-        return pdf, latest_month
+        return pdf, target_month
     except Exception as e:
         st.error(f"회사별 데이터 로드 실패: {e}")
         return pd.DataFrame(), ""
@@ -706,84 +704,86 @@ with main_tab2:
     
         if not company_df.empty:
             st.markdown(f"**조회 시점: {latest_m}** ( * 표시: 경과조치 적용 전 비율 사용 )")
-        
-        # 제외할 회사 선택 UI
-        all_companies = sorted(company_df['회사명'].unique().tolist())
-        excluded_companies = st.multiselect(
-            "📊 비교 분석에서 제외할 회사 선택 (선택 시 차트에서 제거됩니다)",
-            options=all_companies,
-            default=[],
-            help="데이터값이 비정상적으로 크거나 작아 차트의 전체 형태를 왜곡하는 회사를 제외할 수 있습니다."
-        )
-        
-        # 필터링 적용
-        filtered_df = company_df[~company_df['회사명'].isin(excluded_companies)].copy()
-        
-        # 회사명 축약 적용 (시각화용)
-        filtered_df['short_display_name'] = filtered_df.apply(
-            lambda r: f"{shorten_company_name(r['회사명'])}*" if r['is_fallback'] else shorten_company_name(r['회사명']), 
-            axis=1
-        )
-        
-        # 색상 설정 (기존 차트와 일관성)
-        colors = {
-            '생명보험': '#1f77b4',
-            '손해보험': '#ff7f0e'
-        }
-        
-        col_l, col_r = st.columns(2)
-        
-        for i, sector in enumerate(['생명보험', '손해보험']):
-            target_col = col_l if i == 0 else col_r
             
-            with target_col:
-                st.write(f"### {sector}")
-                
-                # 해당 업권 데이터 필터링 및 정렬 (내림차순)
-                s_df = filtered_df[filtered_df['구분'] == sector].sort_values('final_ratio', ascending=False)
-                
-                if not s_df.empty:
-                    bar = Bar(init_opts=opts.InitOpts(width="100%", height="500px", theme="white"))
-                    bar.add_xaxis(xaxis_data=s_df['short_display_name'].tolist())
-                    bar.add_yaxis(
-                        series_name="지급여력비율 (%)",
-                        y_axis=[int(round(float(v), 0)) for v in s_df['final_ratio']],
-                        label_opts=opts.LabelOpts(is_show=True, position="top", formatter="{c}%"),
-                        itemstyle_opts=opts.ItemStyleOpts(color=colors[sector])
-                    )
-                    
-                    bar.set_global_opts(
-                        title_opts=opts.TitleOpts(title=f"{sector}사별 K-ICS 비율"),
-                        xaxis_opts=opts.AxisOpts(
-                            axislabel_opts=opts.LabelOpts(rotate=45, interval=0, font_size=11)
-                        ),
-                        yaxis_opts=opts.AxisOpts(
-                            name="비율 (%)",
-                            axislabel_opts=opts.LabelOpts(formatter="{value}%"),
-                        ),
-                        tooltip_opts=opts.TooltipOpts(trigger="axis", axis_pointer_type="shadow"),
-                    )
-                    
-                    st_pyecharts(bar, height="500px", key=f"bar_{sector}")
-                else:
-                    st.info(f"{sector} 데이터가 없습니다.")
-        
-        with st.expander("📍 상세 데이터 확인"):
-            # 표시용 데이터프레임 구성
-            display_df = filtered_df.copy()
-            # A, D 컬럼이 없을 수 있으므로 안전하게 처리
-            for col in ['A', 'D']:
-                if col not in display_df.columns:
-                    display_df[col] = 0
+            # 제외할 회사 선택 UI
+            all_companies = sorted(company_df['회사명'].unique().tolist())
+            excluded_companies = st.multiselect(
+                "📊 비교 분석에서 제외할 회사 선택 (선택 시 차트에서 제거됩니다)",
+                options=all_companies,
+                default=[],
+                help="데이터값이 비정상적으로 크거나 작아 차트의 전체 형태를 왜곡하는 회사를 제외할 수 있습니다."
+            )
             
-            st.dataframe(display_df[['구분', '회사명', 'D', 'A', 'final_ratio', 'is_fallback']].rename(
-                columns={
-                    'D': '비율(경과후)', 
-                    'A': '비율(경과전)',
-                    'final_ratio': '지급여력비율(%)', 
-                    'is_fallback': '경과전사용여부'
-                }
-            ), use_container_width=True)
+            # 필터링 적용
+            filtered_df = company_df[~company_df['회사명'].isin(excluded_companies)].copy()
+            
+            # 회사명 축약 적용 (시각화용)
+            filtered_df['short_display_name'] = filtered_df.apply(
+                lambda r: f"{shorten_company_name(r['회사명'])}*" if r['is_fallback'] else shorten_company_name(r['회사명']), 
+                axis=1
+            )
+            
+            # 색상 설정 (기존 차트와 일관성)
+            colors = {
+                '생명보험': '#1f77b4',
+                '손해보험': '#ff7f0e'
+            }
+            
+            col_l, col_r = st.columns(2)
+            
+            for i, sector in enumerate(['생명보험', '손해보험']):
+                target_col = col_l if i == 0 else col_r
+                
+                with target_col:
+                    st.write(f"### {sector}")
+                    
+                    # 해당 업권 데이터 필터링 및 정렬 (내림차순)
+                    s_df = filtered_df[filtered_df['구분'] == sector].sort_values('final_ratio', ascending=False)
+                    
+                    if not s_df.empty:
+                        bar = Bar(init_opts=opts.InitOpts(width="100%", height="500px", theme="white"))
+                        bar.add_xaxis(xaxis_data=s_df['short_display_name'].tolist())
+                        bar.add_yaxis(
+                            series_name="지급여력비율 (%)",
+                            y_axis=[int(round(float(v), 0)) for v in s_df['final_ratio']],
+                            label_opts=opts.LabelOpts(is_show=True, position="top", formatter="{c}%"),
+                            itemstyle_opts=opts.ItemStyleOpts(color=colors[sector])
+                        )
+                        
+                        bar.set_global_opts(
+                            title_opts=opts.TitleOpts(title=f"{sector}사별 K-ICS 비율"),
+                            xaxis_opts=opts.AxisOpts(
+                                axislabel_opts=opts.LabelOpts(rotate=45, interval=0, font_size=11)
+                            ),
+                            yaxis_opts=opts.AxisOpts(
+                                name="비율 (%)",
+                                axislabel_opts=opts.LabelOpts(formatter="{value}%"),
+                            ),
+                            tooltip_opts=opts.TooltipOpts(trigger="axis", axis_pointer_type="shadow"),
+                        )
+                        
+                        st_pyecharts(bar, height="500px", key=f"bar_{sector}")
+                    else:
+                        st.info(f"{sector} 데이터가 없습니다.")
+            
+            with st.expander("📍 상세 데이터 확인"):
+                # 표시용 데이터프레임 구성
+                display_df = filtered_df.copy()
+                # A, D 컬럼이 없을 수 있으므로 안전하게 처리
+                for col in ['A', 'D']:
+                    if col not in display_df.columns:
+                        display_df[col] = 0
+                
+                st.dataframe(display_df[['구분', '회사명', 'D', 'A', 'final_ratio', 'is_fallback']].rename(
+                    columns={
+                        'D': '비율(경과후)', 
+                        'A': '비율(경과전)',
+                        'final_ratio': '지급여력비율(%)', 
+                        'is_fallback': '경과전사용여부'
+                    }
+                ), use_container_width=True)
+        else:
+            st.warning(f"{selected_month}에 대한 데이터가 없습니다. 먼저 데이터 수집을 진행해 주세요.")
     else:
         st.warning("표시할 회사별 데이터가 없습니다. 먼저 '데이터 수집기' 탭에서 데이터를 수집해 주세요.")
 
