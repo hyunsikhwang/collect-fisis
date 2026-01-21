@@ -314,9 +314,10 @@ def load_company_solvency_data(target_month):
         if 'D' not in pdf.columns: pdf['D'] = 0
         if 'A' not in pdf.columns: pdf['A'] = 0
 
-        # 4. Fallback 로직 적용: D가 없거나 0이면 A 사용
+        # 4. Fallback 로직 적용: D가 없거나, 0이거나, A와 같은 경우 A 사용 및 표시
         def get_final_ratio(row):
-            if pd.notnull(row['D']) and row['D'] > 0:
+            # D가 유효(notnull, >0)하고 A와 다른 경우에만 '경과후' 고유값이 있는 것으로 간주
+            if pd.notnull(row['D']) and row['D'] > 0 and row['D'] != row['A']:
                 return row['D'], False # (값, fallback여부)
             else:
                 return row['A'], True
