@@ -12,7 +12,7 @@ from datetime import datetime
 from pytz import timezone
 from streamlit_echarts import st_pyecharts
 from pyecharts import options as opts
-from pyecharts.charts import Line
+from pyecharts.charts import Line, Bar
 
 # Streamlit 페이지 설정
 st.set_page_config(
@@ -247,6 +247,64 @@ def fetch_ecos_bond_yield(start_month, end_month):
         st.warning(f"ECOS 금리 데이터 로드 실패: {e}")
     return pd.DataFrame()
 
+def load_company_solvency_data():
+    """보험사별 최신 지급여력비율 데이터 로드 및 전처리"""
+    conn = get_md_connection()
+    if not conn:
+        return pd.DataFrame(), ""
+    
+    try:
+        # 1. 가장 최근 기준년월 확인
+        latest_month = conn.execute(f"SELECT MAX(기준년월) FROM {TABLE_NAME}").fetchone()[0]
+        if not latest_month:
+            return pd.DataFrame(), ""
+
+        # 2. 필요한 계정코드(A, D) 데이터 가져오기
+        # A: 지급여력비율(경과조치 적용 전), D: 지급여력비율(경과조치 적용 후)
+        query = f"""
+            SELECT 구분, 회사명, 계정코드, 값, 기준년월
+            FROM {TABLE_NAME}
+            WHERE 기준년월 = ? AND 계정코드 IN ('A', 'D')
+        """
+        df = conn.execute(query, [latest_month]).df()
+        conn.close()
+
+        if df.empty:
+            return pd.DataFrame(), latest_month
+
+        # 3. 피벗하여 A, D 컬럼으로 분리
+        pdf = df.pivot_table(
+            index=['구분', '회사명', '기준년월'],
+            columns='계정코드',
+            values='값',
+            aggfunc='first'
+        ).reset_index()
+
+        # 컬럼 존재 확인
+        if 'D' not in pdf.columns: pdf['D'] = 0
+        if 'A' not in pdf.columns: pdf['A'] = 0
+
+        # 4. Fallback 로직 적용: D가 없거나 0이면 A 사용
+        def get_final_ratio(row):
+            if pd.notnull(row['D']) and row['D'] > 0:
+                return row['D'], False # (값, fallback여부)
+            else:
+                return row['A'], True
+
+        pdf[['final_ratio', 'is_fallback']] = pdf.apply(
+            lambda r: pd.Series(get_final_ratio(r)), axis=1
+        )
+
+        # 5. 표시용 회사명 처리 (fallback인 경우 표시)
+        pdf['display_name'] = pdf.apply(
+            lambda r: f"{r['회사명']}*" if r['is_fallback'] else r['회사명'], axis=1
+        )
+
+        return pdf, latest_month
+    except Exception as e:
+        st.error(f"회사별 데이터 로드 실패: {e}")
+        return pd.DataFrame(), ""
+
 # ==========================================
 # 2. 비동기 통신 함수 정의
 # ==========================================
@@ -446,8 +504,12 @@ async def run_async_collection():
 # ==========================================
 st.title("📊 보험사 지급여력비율 분석 대시보드")
 
-# 메인 탭 분리: 분석 대시보드와 데이터 수집기
-main_tab1, main_tab2 = st.tabs(["📈 분석 대시보드 (Dashboard)", "📡 데이터 수집기 (Collector)"])
+# 메인 탭 분리: 분석 대시보드, 회사별 현황, 데이터 수집기
+main_tab1, main_tab2, main_tab3 = st.tabs([
+    "📈 분석 대시보드 (Dashboard)", 
+    "📊 회사별 현황 (Company Status)", 
+    "📡 데이터 수집기 (Collector)"
+])
 
 with main_tab1:
     st.subheader("📊 K-ICS 비율 추이 분석")
@@ -592,6 +654,76 @@ with main_tab1:
                 st.warning("MotherDuck 연결 실패 (토큰 확인 필요)")
 
 with main_tab2:
+    st.subheader("📊 회사별 지급여력비율 현황")
+    
+    company_df, latest_m = load_company_solvency_data()
+    
+    if not company_df.empty:
+        st.markdown(f"**기준년월: {latest_m}** ( * 표시: 경과조치 적용 전 비율 사용 )")
+        
+        # 색상 설정 (기존 차트와 일관성)
+        colors = {
+            '생명보험': '#1f77b4',
+            '손해보험': '#ff7f0e'
+        }
+        
+        col_l, col_r = st.columns(2)
+        
+        for i, sector in enumerate(['생명보험', '손해보험']):
+            target_col = col_l if i == 0 else col_r
+            
+            with target_col:
+                st.write(f"### {sector}")
+                
+                # 해당 업권 데이터 필터링 및 정렬 (내림차순)
+                s_df = company_df[company_df['구분'] == sector].sort_values('final_ratio', ascending=False)
+                
+                if not s_df.empty:
+                    bar = Bar(init_opts=opts.InitOpts(width="100%", height="500px", theme="white"))
+                    bar.add_xaxis(xaxis_data=s_df['display_name'].tolist())
+                    bar.add_yaxis(
+                        series_name="지급여력비율 (%)",
+                        y_axis=[round(float(v), 2) for v in s_df['final_ratio']],
+                        label_opts=opts.LabelOpts(is_show=True, position="top", formatter="{c}%"),
+                        itemstyle_opts=opts.ItemStyleOpts(color=colors[sector])
+                    )
+                    
+                    bar.set_global_opts(
+                        title_opts=opts.TitleOpts(title=f"{sector}사별 K-ICS 비율"),
+                        xaxis_opts=opts.AxisOpts(
+                            axislabel_opts=opts.LabelOpts(rotate=45, interval=0)
+                        ),
+                        yaxis_opts=opts.AxisOpts(
+                            name="비율 (%)",
+                            axislabel_opts=opts.LabelOpts(formatter="{value}%"),
+                        ),
+                        tooltip_opts=opts.TooltipOpts(trigger="axis", axis_pointer_type="shadow"),
+                    )
+                    
+                    st_pyecharts(bar, height="500px", key=f"bar_{sector}")
+                else:
+                    st.info(f"{sector} 데이터가 없습니다.")
+        
+        with st.expander("📍 상세 데이터 확인"):
+            # 표시용 데이터프레임 구성
+            display_df = company_df.copy()
+            # A, D 컬럼이 없을 수 있으므로 안전하게 처리
+            for col in ['A', 'D']:
+                if col not in display_df.columns:
+                    display_df[col] = 0
+            
+            st.dataframe(display_df[['구분', '회사명', 'D', 'A', 'final_ratio', 'is_fallback']].rename(
+                columns={
+                    'D': '비율(경과후)', 
+                    'A': '비율(경과전)',
+                    'final_ratio': '지급여력비율(%)', 
+                    'is_fallback': '경과전사용여부'
+                }
+            ), use_container_width=True)
+    else:
+        st.warning("표시할 회사별 데이터가 없습니다. 먼저 '데이터 수집기' 탭에서 데이터를 수집해 주세요.")
+
+with main_tab3:
     st.subheader("📡 FSS Open API 데이터 수집")
     
     # 설정 섹션 (기존 사이드바에서 이동)
