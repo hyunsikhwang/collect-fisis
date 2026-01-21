@@ -264,31 +264,45 @@ def shorten_company_name(name):
         short_name = short_name.replace(r, "")
     
     return short_name.strip()
+    
+    return short_name.strip()
 
-def load_company_solvency_data():
-    """보험사별 최신 지급여력비율 데이터 로드 및 전처리"""
+def get_available_months():
+    """DB에 저장된 모든 기준년월 목록을 내림차순으로 반환"""
     conn = get_md_connection()
     if not conn:
+        return []
+    try:
+        # 최신순 정렬
+        df = conn.execute(f"SELECT DISTINCT 기준년월 FROM {TABLE_NAME} ORDER BY 기준년월 DESC").df()
+        conn.close()
+        return df['기준년월'].tolist()
+    except Exception as e:
+        st.error(f"기준년월 목록 조회 실패: {e}")
+        return []
+
+def load_company_solvency_data(target_month):
+    """보험사별 특정 기준년월 지급여력비율 데이터 로드 및 전처리"""
+    if not target_month:
         return pd.DataFrame(), ""
+
+    conn = get_md_connection()
+    if not conn:
+        return pd.DataFrame(), target_month
     
     try:
-        # 1. 가장 최근 기준년월 확인
-        latest_month = conn.execute(f"SELECT MAX(기준년월) FROM {TABLE_NAME}").fetchone()[0]
-        if not latest_month:
-            return pd.DataFrame(), ""
-
-        # 2. 필요한 계정코드(A, D) 데이터 가져오기
+        # 1. 필요한 계정코드(A, D) 데이터 가져오기
         # A: 지급여력비율(경과조치 적용 전), D: 지급여력비율(경과조치 적용 후)
         query = f"""
             SELECT 구분, 회사명, 계정코드, 값, 기준년월
             FROM {TABLE_NAME}
             WHERE 기준년월 = ? AND 계정코드 IN ('A', 'D')
         """
-        df = conn.execute(query, [latest_month]).df()
+        df = conn.execute(query, [target_month]).df()
         conn.close()
 
         if df.empty:
-            return pd.DataFrame(), latest_month
+            return pd.DataFrame(), target_month
 
         # 3. 피벗하여 A, D 컬럼으로 분리
         pdf = df.pivot_table(
@@ -674,10 +688,24 @@ with main_tab1:
 with main_tab2:
     st.subheader("📊 회사별 지급여력비율 현황")
     
-    company_df, latest_m = load_company_solvency_data()
+    # 가용한 모든 기준년월 가져오기
+    available_months = get_available_months()
     
-    if not company_df.empty:
-        st.markdown(f"**기준년월: {latest_m}** ( * 표시: 경과조치 적용 전 비율 사용 )")
+    if available_months:
+        # 기준년월 선택 영역
+        col_m, col_e = st.columns([1, 2])
+        with col_m:
+            selected_month = st.selectbox(
+                "📅 기준년월 선택", 
+                options=available_months, 
+                index=0,
+                help="조회할 기준년월을 선택하세요. 최신 데이터가 상단에 위치합니다."
+            )
+        
+        company_df, latest_m = load_company_solvency_data(selected_month)
+    
+        if not company_df.empty:
+            st.markdown(f"**조회 시점: {latest_m}** ( * 표시: 경과조치 적용 전 비율 사용 )")
         
         # 제외할 회사 선택 UI
         all_companies = sorted(company_df['회사명'].unique().tolist())
