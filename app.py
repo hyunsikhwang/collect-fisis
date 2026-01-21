@@ -669,9 +669,8 @@ with main_tab1:
         
         st_pyecharts(line, height="600px")
         
-        # 분석 데이터 테이블
         with st.expander("📍 상세 수치 데이터 확인"):
-            st.dataframe(analysis_df, use_container_width=True)
+            st.dataframe(analysis_df, width="stretch")
     else:
         st.warning("표시할 분석 데이터가 없습니다. 먼저 '데이터 수집기' 탭에서 데이터를 수집해 주세요.")
         
@@ -685,11 +684,11 @@ with main_tab1:
                     
                     st.write("보관 중인 계정명 목록:")
                     distinct_accounts = conn.execute(f"SELECT DISTINCT 계정명 FROM {TABLE_NAME}").df()
-                    st.dataframe(distinct_accounts)
+                    st.dataframe(distinct_accounts, width="stretch")
                     
                     st.write("보관 중인 기준년월 목록:")
                     distinct_months = conn.execute(f"SELECT DISTINCT 기준년월 FROM {TABLE_NAME} ORDER BY 기준년월").df()
-                    st.dataframe(distinct_months)
+                    st.dataframe(distinct_months, width="stretch")
                     
                     conn.close()
                 except Exception as e:
@@ -774,10 +773,11 @@ with main_tab2:
                             itemstyle_opts=opts.ItemStyleOpts(color=colors[sector]),
                             markline_opts=opts.MarkLineOpts(
                                 data=[
-                                    opts.MarkLineItem(
-                                        y_axis=round(weighted_avg, 2), 
-                                        name=f"업권 평균 ({round(weighted_avg, 1)}%)"
-                                    )
+                                    # MarkLineItem의 인자 오류를 피하기 위해 딕셔너리 형식 사용
+                                    {
+                                        "yAxis": round(weighted_avg, 2), 
+                                        "name": f"업권 평균 ({round(weighted_avg, 1)}%)"
+                                    }
                                 ],
                                 label_opts=opts.LabelOpts(
                                     formatter=f"{sector} 평균: {round(weighted_avg, 1)}%",
@@ -818,7 +818,7 @@ with main_tab2:
                         'final_ratio': '지급여력비율(%)', 
                         'is_fallback': '경과전사용여부'
                     }
-                ), use_container_width=True)
+                ), width="stretch")
         else:
             st.warning(f"{selected_month}에 대한 데이터가 없습니다. 먼저 데이터 수집을 진행해 주세요.")
     else:
@@ -884,7 +884,7 @@ with main_tab3:
                 
                 with tab_res1:
                     st.subheader(f"{TARGET_MONTH} 수집 결과 (요약)")
-                    st.dataframe(df_pivot, use_container_width=True)
+                    st.dataframe(df_pivot, width="stretch")
                     
                     # CSV 다운로드
                     csv = df_pivot.to_csv(index=False, encoding='utf-8-sig')
@@ -897,7 +897,7 @@ with main_tab3:
 
                 with tab_res2:
                     st.subheader(f"{TARGET_MONTH} RAW 데이터")
-                    st.dataframe(df, use_container_width=True)
+                    st.dataframe(df, width="stretch")
                 
                 # 수집이 완료되었으니 화면 갱신을 유도하거나 정보를 제공
                 st.info("💡 새로운 데이터가 저장되었습니다. '분석 대시보드' 탭으로 이동하여 차트를 확인해 보세요.")
