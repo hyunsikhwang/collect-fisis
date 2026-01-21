@@ -783,7 +783,7 @@ with main_tab2:
                                     formatter=f"{sector} 평균: {round(weighted_avg, 1)}%",
                                     position="insideEndTop"
                                 ),
-                                linestyle_opts=opts.LineStyleOpts(type_="dashed", width=2, color="#333")
+                                linestyle_opts=opts.LineStyleOpts(type_="dashed", width=1, color="#D10000")
                             )
                         )
                         
