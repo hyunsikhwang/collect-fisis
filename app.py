@@ -266,6 +266,96 @@ def shorten_company_name(name):
     
     return short_name.strip()
 
+def render_sector_chart(sector, filtered_df, company_df, color_sets, weighted_avg):
+    """특정 업권의 누적 바 차트 및 평균선을 렌더링"""
+    import pandas as pd
+    from pyecharts import options as opts
+    from pyecharts.charts import Bar
+    from pyecharts.commons.utils import JsCode
+    from streamlit_echarts import st_pyecharts
+
+    st.write(f"### {sector}")
+    
+    # 해당 업권 데이터 필터링 및 정렬
+    s_df = filtered_df[filtered_df['구분'] == sector].sort_values('final_ratio', ascending=False)
+    
+    if s_df.empty:
+        st.info(f"{sector} 데이터가 없습니다.")
+        return
+
+    # 누적 차트를 위한 데이터 준비
+    base_ratios = [] # 하단 (A)
+    effect_ratios = [] # 상단 (D-A)
+    total_ratios = [] # 레이블 표시용 (D)
+    
+    for _, row in s_df.iterrows():
+        a_val = float(row['A'])
+        d_val = float(row['final_ratio'])
+        
+        if row['is_fallback']:
+            base_ratios.append(int(round(a_val, 0)))
+            effect_ratios.append(0)
+        else:
+            base_ratios.append(int(round(a_val, 0)))
+            effect_ratios.append(max(0, int(round(d_val - a_val, 0))))
+        
+        total_ratios.append(int(round(d_val, 0)))
+
+    bar = Bar(init_opts=opts.InitOpts(width="100%", height="500px", theme="white"))
+    bar.add_xaxis(xaxis_data=s_df['short_display_name'].tolist())
+    
+    # 1. 하단 바: 경과조치 전
+    bar.add_yaxis(
+        series_name="경과조치 전",
+        y_axis=base_ratios,
+        stack="stack1",
+        label_opts=opts.LabelOpts(is_show=False),
+        itemstyle_opts=opts.ItemStyleOpts(color=color_sets[sector][0])
+    )
+    
+    # 2. 상단 바: 경과조치 효과
+    bar.add_yaxis(
+        series_name="경과조치 효과",
+        y_axis=effect_ratios,
+        stack="stack1",
+        label_opts=opts.LabelOpts(
+            is_show=True, 
+            position="top", 
+            formatter=JsCode("""function(params) {
+                var total_ratios = """ + str(total_ratios) + """;
+                return total_ratios[params.dataIndex] + '%';
+            }""")
+        ),
+        itemstyle_opts=opts.ItemStyleOpts(color=color_sets[sector][1]),
+        markline_opts=opts.MarkLineOpts(
+            data=[{"yAxis": round(weighted_avg, 2), "name": f"업권 평균 ({round(weighted_avg, 1)}%)"}],
+            label_opts=opts.LabelOpts(formatter=f"{sector} 평균: {round(weighted_avg, 1)}%", position="insideEndTop"),
+            linestyle_opts=opts.LineStyleOpts(type_="dashed", width=1, color="#D10000")
+        )
+    )
+    
+    bar.set_global_opts(
+        title_opts=opts.TitleOpts(title=f"{sector}사별 K-ICS 비율"),
+        xaxis_opts=opts.AxisOpts(axislabel_opts=opts.LabelOpts(rotate=45, interval=0, font_size=11)),
+        yaxis_opts=opts.AxisOpts(name="비율 (%)", axislabel_opts=opts.LabelOpts(formatter="{value}%")),
+        tooltip_opts=opts.TooltipOpts(
+            trigger="axis", 
+            axis_pointer_type="shadow",
+            formatter=JsCode("""function(params) {
+                var res = params[0].name + '<br/>';
+                var total = 0;
+                for(var i=0; i<params.length; i++) {
+                    res += params[i].marker + params[i].seriesName + ': ' + params[i].value + '%<br/>';
+                    total += params[i].value;
+                }
+                res += '<b>최종 비율 (경과후): ' + total + '%</b>';
+                return res;
+            }""")
+        ),
+    )
+    
+    st_pyecharts(bar, height="500px", key=f"bar_{sector}")
+
 def get_available_months():
     """DB에 저장된 모든 기준년월 목록을 내림차순으로 반환"""
     conn = get_md_connection()
@@ -349,6 +439,29 @@ def load_company_solvency_data(target_month):
     except Exception as e:
         st.error(f"회사별 데이터 로드 실패: {e}")
         return pd.DataFrame(), ""
+
+# 분석용 업권 분류 설정 (손해 업권 세분화용)
+EXCLUDE_NON_LIFE = [
+    '팩토리뮤추얼인슈런스컴퍼니 한국지점',
+    '퍼스트어메리칸권원보험(주)한국지점',
+    '미쓰이스미토모해상화재보험(주)한국지점',
+    '스타인터내셔널인슈어런스싱가포르한국지점',
+    '동경해상일동화재보험(주)서울지점[폐]',
+    '서울보증보험주식회사',
+    '마이브라운반려동물전문보험',
+    '알리안츠글로벌코퍼레이트앤스페셜티에스이 한국지점'
+]
+
+REINSURANCE_COMPANIES = [
+    '알지에이 리인슈어런스 컴파니 한국지점',
+    '코리안리재보험주식회사',
+    '스위스리 아시아 피티이 엘티디 한국지점',
+    '스코리인슈어런스아시아퍼시픽피티이엘티디한국지점',
+    '뮌헨재보험주식회사 한국지점',
+    '제너럴재보험주식회사 서울지점',
+    '퍼시픽라이프리 인터내셔널 한국지점',
+    '하노버재보험(주) 한국지점'
+]
 
 # ==========================================
 # 2. 비동기 통신 함수 정의
@@ -717,6 +830,23 @@ with main_tab2:
         company_df, latest_m = load_company_solvency_data(selected_month)
     
         if not company_df.empty:
+            # 업권 재분류 로직 (손해보험 세분화)
+            def reclassify_sector(row):
+                if row['구분'] == '생명보험':
+                    return '생명보험'
+                elif row['구분'] == '손해보험':
+                    if row['회사명'] in REINSURANCE_COMPANIES:
+                        return '재보험'
+                    elif row['회사명'] in EXCLUDE_NON_LIFE:
+                        return '제외'
+                    else:
+                        return '손해보험'
+                return row['구분']
+
+            company_df['구분'] = company_df.apply(reclassify_sector, axis=1)
+            # 제외 대상 제거
+            company_df = company_df[company_df['구분'] != '제외'].copy()
+
             st.markdown(f"**조회 시점: {latest_m}** ( * 표시: 경과조치 적용 전 비율 사용 )")
             
             # 제외할 회사 선택 UI
@@ -737,133 +867,33 @@ with main_tab2:
                 axis=1
             )
             
-            # 색상 설정 (기존 차트와 일관성)
-            colors = {
-                '생명보험': '#1f77b4',
-                '손해보험': '#ff7f0e'
+            # 색상 설정 (연한 색, 진한 색)
+            color_sets = {
+                '생명보험': ['#A6CEE3', '#1F78B4'], 
+                '손해보험': ['#FDBF6F', '#FF7F00'],
+                '재보험': ['#B2DF8A', '#33A02C']  # 연한 초록, 진한 초록
             }
-            
+
+            # 차트 렌더링 로직 (상단 2열: 생명/손해, 하단 1열: 재보험)
             col_l, col_r = st.columns(2)
-            
             for i, sector in enumerate(['생명보험', '손해보험']):
                 target_col = col_l if i == 0 else col_r
-                
                 with target_col:
-                    st.write(f"### {sector}")
-                    
-                    # 해당 업권 데이터 필터링 (제외 회사 반영 전후 데이터 구분)
-                    # s_df: 차트에 표시할 개별 회사 데이터
-                    s_df = filtered_df[filtered_df['구분'] == sector].sort_values('final_ratio', ascending=False)
-                    
-                    # 가중 평균 계산 (제외된 회사와 상관없이 해당 업권 전체를 대상으로 할지, 
-                    # 아니면 필터링된 결과 내에서 계산할지 결정 필요. 
-                    # 사용자 요청은 '해당 업권의 전체'이므로 company_df(전체 데이터) 기반 계산)
-                    total_sector_df = company_df[company_df['구분'] == sector]
-                    sum_num = total_sector_df['eff_num'].sum()
-                    sum_den = total_sector_df['eff_den'].sum()
-                    
+                    sector_df = company_df[company_df['구분'] == sector]
+                    sum_num = sector_df['eff_num'].sum()
+                    sum_den = sector_df['eff_den'].sum()
                     weighted_avg = (sum_num / sum_den * 100) if sum_den > 0 else 0
                     
-                    if not s_df.empty:
-                        # 누적 차트를 위한 데이터 준비
-                        # 하단: 경과조치 전 (A)
-                        # 상단: 효과 (D - A)
-                        # A > D 인 특이 케이스가 있을 수 있으므로 max(0, D-A) 처리
-                        base_ratios = [] # 하단 (A)
-                        effect_ratios = [] # 상단 (D-A)
-                        total_ratios = [] # 레이블 표시용 (D)
-                        
-                        for _, row in s_df.iterrows():
-                            a_val = float(row['A'])
-                            d_val = float(row['final_ratio']) # 이미 Fallback 로직이 적용된 최종값
-                            
-                            if row['is_fallback']:
-                                # Fallback인 경우 (D가 없거나 A와 같은 경우) 효과는 0
-                                base_ratios.append(int(round(a_val, 0)))
-                                effect_ratios.append(0)
-                            else:
-                                # 정상적인 경우
-                                base_ratios.append(int(round(a_val, 0)))
-                                effect_ratios.append(max(0, int(round(d_val - a_val, 0))))
-                            
-                            total_ratios.append(int(round(d_val, 0)))
-
-                        # 업권별 색상 (연한 색, 진한 색)
-                        color_sets = {
-                            '생명보험': ['#A6CEE3', '#1F78B4'], # 연한 파랑, 진한 파랑
-                            '손해보험': ['#FDBF6F', '#FF7F00']  # 연한 주황, 진한 주황
-                        }
-                        
-                        bar = Bar(init_opts=opts.InitOpts(width="100%", height="500px", theme="white"))
-                        bar.add_xaxis(xaxis_data=s_df['short_display_name'].tolist())
-                        
-                        # 1. 하단 바: 경과조치 전 (Stack A)
-                        bar.add_yaxis(
-                            series_name="경과조치 전",
-                            y_axis=base_ratios,
-                            stack="stack1",
-                            label_opts=opts.LabelOpts(is_show=False),
-                            itemstyle_opts=opts.ItemStyleOpts(color=color_sets[sector][0])
-                        )
-                        
-                        # 2. 상단 바: 경과조치 효과 (Stack A)
-                        bar.add_yaxis(
-                            series_name="경과조치 효과",
-                            y_axis=effect_ratios,
-                            stack="stack1",
-                            # JsCode를 사용하여 JS 엔진이 함수를 해석하게 함
-                            label_opts=opts.LabelOpts(
-                                is_show=True, 
-                                position="top", 
-                                formatter=JsCode("""function(params) {
-                                    var total_ratios = """ + str(total_ratios) + """;
-                                    return total_ratios[params.dataIndex] + '%';
-                                }""")
-                            ),
-                            itemstyle_opts=opts.ItemStyleOpts(color=color_sets[sector][1]),
-                            markline_opts=opts.MarkLineOpts(
-                                data=[
-                                    {
-                                        "yAxis": round(weighted_avg, 2), 
-                                        "name": f"업권 평균 ({round(weighted_avg, 1)}%)"
-                                    }
-                                ],
-                                label_opts=opts.LabelOpts(
-                                    formatter=f"{sector} 평균: {round(weighted_avg, 1)}%",
-                                    position="insideEndTop"
-                                ),
-                                linestyle_opts=opts.LineStyleOpts(type_="dashed", width=1, color="#D10000")
-                            )
-                        )
-                        
-                        bar.set_global_opts(
-                            title_opts=opts.TitleOpts(title=f"{sector}사별 K-ICS 비율"),
-                            xaxis_opts=opts.AxisOpts(
-                                axislabel_opts=opts.LabelOpts(rotate=45, interval=0, font_size=11)
-                            ),
-                            yaxis_opts=opts.AxisOpts(
-                                name="비율 (%)",
-                                axislabel_opts=opts.LabelOpts(formatter="{value}%"),
-                            ),
-                            tooltip_opts=opts.TooltipOpts(
-                                trigger="axis", 
-                                axis_pointer_type="shadow",
-                                formatter=JsCode("""function(params) {
-                                    var res = params[0].name + '<br/>';
-                                    var total = 0;
-                                    for(var i=0; i<params.length; i++) {
-                                        res += params[i].marker + params[i].seriesName + ': ' + params[i].value + '%<br/>';
-                                        total += params[i].value;
-                                    }
-                                    res += '<b>최종 비율 (경과후): ' + total + '%</b>';
-                                    return res;
-                                }""")
-                            ),
-                        )
-                        
-                        st_pyecharts(bar, height="500px", key=f"bar_{sector}")
-                    else:
-                        st.info(f"{sector} 데이터가 없습니다.")
+                    render_sector_chart(sector, filtered_df, company_df, color_sets, weighted_avg)
+            
+            st.divider()
+            # 재보험 차트 (가로로 넓게 표시)
+            sector = '재보험'
+            sector_df = company_df[company_df['구분'] == sector]
+            sum_num = sector_df['eff_num'].sum()
+            sum_den = sector_df['eff_den'].sum()
+            weighted_avg = (sum_num / sum_den * 100) if sum_den > 0 else 0
+            render_sector_chart(sector, filtered_df, company_df, color_sets, weighted_avg)
             
             with st.expander("📍 상세 데이터 확인"):
                 # 표시용 데이터프레임 구성
