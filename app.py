@@ -289,12 +289,12 @@ def load_company_solvency_data(target_month):
         return pd.DataFrame(), target_month
     
     try:
-        # 1. 필요한 계정코드(A, D) 데이터 가져오기
-        # A: 지급여력비율(경과조치 적용 전), D: 지급여력비율(경과조치 적용 후)
+        # 1. 필요한 계정코드 데이터 가져오기
+        # A, B, C, D, E, F (E, F는 가중평균 계산용 분자/분모, B, C는 Fallback용)
         query = f"""
             SELECT 구분, 회사명, 계정코드, 값, 기준년월
             FROM {TABLE_NAME}
-            WHERE 기준년월 = ? AND 계정코드 IN ('A', 'D')
+            WHERE 기준년월 = ? AND 계정코드 IN ('A', 'B', 'C', 'D', 'E', 'F')
         """
         df = conn.execute(query, [target_month]).df()
         conn.close()
@@ -310,25 +310,38 @@ def load_company_solvency_data(target_month):
             aggfunc='first'
         ).reset_index()
 
-        # 컬럼 존재 확인
-        if 'D' not in pdf.columns: pdf['D'] = 0
-        if 'A' not in pdf.columns: pdf['A'] = 0
-
-        # 4. Fallback 로직 적용: D가 없거나, 0이거나, A와 같은 경우 A 사용 및 표시
-        def get_final_ratio(row):
-            # D가 유효(notnull, >0)하고 A와 다른 경우에만 '경과후' 고유값이 있는 것으로 간주
-            if pd.notnull(row['D']) and row['D'] > 0 and row['D'] != row['A']:
-                return row['D'], False # (값, fallback여부)
+        # 컬럼 존재 확인 및 0 채우기
+        for c_code in ['A', 'B', 'C', 'D', 'E', 'F']:
+            if c_code not in pdf.columns:
+                pdf[c_code] = 0
             else:
-                return row['A'], True
+                pdf[c_code] = pdf[c_code].fillna(0)
 
-        pdf[['final_ratio', 'is_fallback']] = pdf.apply(
-            lambda r: pd.Series(get_final_ratio(r)), axis=1
-        )
+        # 4. 개별 회사 Fallback 로직 및 유효 금액 계산
+        def process_row(row):
+            # A, D 기반 최종 비율 (단순 표시용)
+            # D가 유효하고 A와 다른 경우에만 '경과후' 사용
+            if row['D'] > 0 and row['D'] != row['A']:
+                final_r = row['D']
+                is_fb = False
+            else:
+                final_r = row['A']
+                is_fb = True
+            
+            # 가중 평균용 유효 금액 계산
+            # 분자(지급여력금액): E > 0 ? E : B
+            eff_num = row['E'] if row['E'] > 0 else row['B']
+            # 분모(기준금액): F > 0 ? F : C
+            eff_den = row['F'] if row['F'] > 0 else row['C']
+            
+            return pd.Series([final_r, is_fb, eff_num, eff_den])
 
-        # 5. 표시용 회사명 처리 (fallback인 경우 표시)
+        pdf[['final_ratio', 'is_fallback', 'eff_num', 'eff_den']] = pdf.apply(process_row, axis=1)
+
+        # 5. 표시용 회사명 처리
         pdf['display_name'] = pdf.apply(
-            lambda r: f"{r['회사명']}*" if r['is_fallback'] else r['회사명'], axis=1
+            lambda r: f"{shorten_company_name(r['회사명'])}*" if r['is_fallback'] else shorten_company_name(r['회사명']), 
+            axis=1
         )
 
         return pdf, target_month
@@ -738,8 +751,18 @@ with main_tab2:
                 with target_col:
                     st.write(f"### {sector}")
                     
-                    # 해당 업권 데이터 필터링 및 정렬 (내림차순)
+                    # 해당 업권 데이터 필터링 (제외 회사 반영 전후 데이터 구분)
+                    # s_df: 차트에 표시할 개별 회사 데이터
                     s_df = filtered_df[filtered_df['구분'] == sector].sort_values('final_ratio', ascending=False)
+                    
+                    # 가중 평균 계산 (제외된 회사와 상관없이 해당 업권 전체를 대상으로 할지, 
+                    # 아니면 필터링된 결과 내에서 계산할지 결정 필요. 
+                    # 사용자 요청은 '해당 업권의 전체'이므로 company_df(전체 데이터) 기반 계산)
+                    total_sector_df = company_df[company_df['구분'] == sector]
+                    sum_num = total_sector_df['eff_num'].sum()
+                    sum_den = total_sector_df['eff_den'].sum()
+                    
+                    weighted_avg = (sum_num / sum_den * 100) if sum_den > 0 else 0
                     
                     if not s_df.empty:
                         bar = Bar(init_opts=opts.InitOpts(width="100%", height="500px", theme="white"))
@@ -748,7 +771,20 @@ with main_tab2:
                             series_name="지급여력비율 (%)",
                             y_axis=[int(round(float(v), 0)) for v in s_df['final_ratio']],
                             label_opts=opts.LabelOpts(is_show=True, position="top", formatter="{c}%"),
-                            itemstyle_opts=opts.ItemStyleOpts(color=colors[sector])
+                            itemstyle_opts=opts.ItemStyleOpts(color=colors[sector]),
+                            markline_opts=opts.MarkLineOpts(
+                                data=[
+                                    opts.MarkLineItem(
+                                        y_axis=round(weighted_avg, 2), 
+                                        name=f"업권 평균 ({round(weighted_avg, 1)}%)"
+                                    )
+                                ],
+                                label_opts=opts.LabelOpts(
+                                    formatter=f"{sector} 평균: {round(weighted_avg, 1)}%",
+                                    position="insideEndTop"
+                                ),
+                                linestyle_opts=opts.LineStyleOpts(type_="dashed", width=2, color="#333")
+                            )
                         )
                         
                         bar.set_global_opts(
