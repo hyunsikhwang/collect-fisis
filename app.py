@@ -719,7 +719,7 @@ with main_tab2:
                     bar.add_xaxis(xaxis_data=s_df['short_display_name'].tolist())
                     bar.add_yaxis(
                         series_name="지급여력비율 (%)",
-                        y_axis=[round(float(v), 2) for v in s_df['final_ratio']],
+                        y_axis=[int(round(float(v), 0)) for v in s_df['final_ratio']],
                         label_opts=opts.LabelOpts(is_show=True, position="top", formatter="{c}%"),
                         itemstyle_opts=opts.ItemStyleOpts(color=colors[sector])
                     )
