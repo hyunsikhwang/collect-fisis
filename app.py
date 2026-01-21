@@ -764,16 +764,64 @@ with main_tab2:
                     weighted_avg = (sum_num / sum_den * 100) if sum_den > 0 else 0
                     
                     if not s_df.empty:
+                        # 누적 차트를 위한 데이터 준비
+                        # 하단: 경과조치 전 (A)
+                        # 상단: 효과 (D - A)
+                        # A > D 인 특이 케이스가 있을 수 있으므로 max(0, D-A) 처리
+                        base_ratios = [] # 하단 (A)
+                        effect_ratios = [] # 상단 (D-A)
+                        total_ratios = [] # 레이블 표시용 (D)
+                        
+                        for _, row in s_df.iterrows():
+                            a_val = float(row['A'])
+                            d_val = float(row['final_ratio']) # 이미 Fallback 로직이 적용된 최종값
+                            
+                            if row['is_fallback']:
+                                # Fallback인 경우 (D가 없거나 A와 같은 경우) 효과는 0
+                                base_ratios.append(int(round(a_val, 0)))
+                                effect_ratios.append(0)
+                            else:
+                                # 정상적인 경우
+                                base_ratios.append(int(round(a_val, 0)))
+                                effect_ratios.append(max(0, int(round(d_val - a_val, 0))))
+                            
+                            total_ratios.append(int(round(d_val, 0)))
+
+                        # 업권별 색상 (연한 색, 진한 색)
+                        color_sets = {
+                            '생명보험': ['#A6CEE3', '#1F78B4'], # 연한 파랑, 진한 파랑
+                            '손해보험': ['#FDBF6F', '#FF7F00']  # 연한 주황, 진한 주황
+                        }
+                        
                         bar = Bar(init_opts=opts.InitOpts(width="100%", height="500px", theme="white"))
                         bar.add_xaxis(xaxis_data=s_df['short_display_name'].tolist())
+                        
+                        # 1. 하단 바: 경과조치 전 (Stack A)
                         bar.add_yaxis(
-                            series_name="지급여력비율 (%)",
-                            y_axis=[int(round(float(v), 0)) for v in s_df['final_ratio']],
-                            label_opts=opts.LabelOpts(is_show=True, position="top", formatter="{c}%"),
-                            itemstyle_opts=opts.ItemStyleOpts(color=colors[sector]),
+                            series_name="경과조치 전",
+                            y_axis=base_ratios,
+                            stack="stack1",
+                            label_opts=opts.LabelOpts(is_show=False),
+                            itemstyle_opts=opts.ItemStyleOpts(color=color_sets[sector][0])
+                        )
+                        
+                        # 2. 상단 바: 경과조치 효과 (Stack A)
+                        bar.add_yaxis(
+                            series_name="경과조치 효과",
+                            y_axis=effect_ratios,
+                            stack="stack1",
+                            # 레이블은 여기서만 표시하고, 실제 데이터는 total_ratios(D)를 쓰도록 formatter 조정
+                            label_opts=opts.LabelOpts(
+                                is_show=True, 
+                                position="top", 
+                                formatter="""function(params) {
+                                    var total_ratios = """ + str(total_ratios) + """;
+                                    return total_ratios[params.dataIndex] + '%';
+                                }"""
+                            ),
+                            itemstyle_opts=opts.ItemStyleOpts(color=color_sets[sector][1]),
                             markline_opts=opts.MarkLineOpts(
                                 data=[
-                                    # MarkLineItem의 인자 오류를 피하기 위해 딕셔너리 형식 사용
                                     {
                                         "yAxis": round(weighted_avg, 2), 
                                         "name": f"업권 평균 ({round(weighted_avg, 1)}%)"
@@ -788,7 +836,7 @@ with main_tab2:
                         )
                         
                         bar.set_global_opts(
-                            title_opts=opts.TitleOpts(title=f"{sector}사별 K-ICS 비율"),
+                            title_opts=opts.TitleOpts(title=f"{sector}사별 K-ICS 비율 (누적: 경과전 + 효과)"),
                             xaxis_opts=opts.AxisOpts(
                                 axislabel_opts=opts.LabelOpts(rotate=45, interval=0, font_size=11)
                             ),
@@ -796,7 +844,20 @@ with main_tab2:
                                 name="비율 (%)",
                                 axislabel_opts=opts.LabelOpts(formatter="{value}%"),
                             ),
-                            tooltip_opts=opts.TooltipOpts(trigger="axis", axis_pointer_type="shadow"),
+                            tooltip_opts=opts.TooltipOpts(
+                                trigger="axis", 
+                                axis_pointer_type="shadow",
+                                formatter="""function(params) {
+                                    var res = params[0].name + '<br/>';
+                                    var total = 0;
+                                    for(var i=0; i<params.length; i++) {
+                                        res += params[i].marker + params[i].seriesName + ': ' + params[i].value + '%<br/>';
+                                        total += params[i].value;
+                                    }
+                                    res += '<b>최종 비율 (경과후): ' + total + '%</b>';
+                                    return res;
+                                }"""
+                            ),
                         )
                         
                         st_pyecharts(bar, height="500px", key=f"bar_{sector}")
