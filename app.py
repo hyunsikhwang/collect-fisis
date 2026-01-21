@@ -354,7 +354,7 @@ def render_sector_chart(sector, filtered_df, company_df, color_sets, weighted_av
         ),
     )
     
-    st_pyecharts(bar, height="500px", key=f"bar_{sector}")
+    st_pyecharts(bar, height="500px", key=f"bar_{sector}", renderer="svg")
 
 def get_available_months():
     """DB에 저장된 모든 기준년월 목록을 내림차순으로 반환"""
@@ -663,13 +663,14 @@ async def run_async_collection():
 st.title("📊 보험사 지급여력비율 분석 대시보드")
 
 # 메인 탭 분리: 분석 대시보드, 회사별 현황, 데이터 수집기
-main_tab1, main_tab2, main_tab3 = st.tabs([
-    "📈 분석 대시보드 (Dashboard)", 
-    "📊 회사별 현황 (Company Status)", 
-    "📡 데이터 수집기 (Collector)"
-])
+selected_tab = st.segmented_control(
+    "메뉴 선택",
+    ["📈 분석 대시보드 (Dashboard)", "📊 회사별 현황 (Company Status)", "📡 데이터 수집기 (Collector)"],
+    default="📈 분석 대시보드 (Dashboard)",
+    label_visibility="collapsed"
+)
 
-with main_tab1:
+if selected_tab == "📈 분석 대시보드 (Dashboard)":
     st.subheader("📊 K-ICS 비율 추이 분석")
     st.info("MotherDuck에 저장된 모든 과거 데이터를 기반으로 시계열 분석을 수행합니다.")
     
@@ -781,7 +782,7 @@ with main_tab1:
             toolbox_opts=opts.ToolboxOpts(is_show=True),
         )
         
-        st_pyecharts(line, height="600px", key="dashboard_line_chart")
+        st_pyecharts(line, height="600px", key="dashboard_line_chart", renderer="svg")
         
         with st.expander("📍 상세 수치 데이터 확인"):
             st.dataframe(analysis_df, width="stretch")
@@ -810,7 +811,7 @@ with main_tab1:
             else:
                 st.warning("MotherDuck 연결 실패 (토큰 확인 필요)")
 
-with main_tab2:
+elif selected_tab == "📊 회사별 현황 (Company Status)":
     st.subheader("📊 회사별 지급여력비율 현황")
     
     # 가용한 모든 기준년월 가져오기
@@ -918,7 +919,7 @@ with main_tab2:
     else:
         st.warning("표시할 회사별 데이터가 없습니다. 먼저 '데이터 수집기' 탭에서 데이터를 수집해 주세요.")
 
-with main_tab3:
+elif selected_tab == "📡 데이터 수집기 (Collector)":
     st.subheader("📡 FSS Open API 데이터 수집")
     
     # 설정 섹션 (기존 사이드바에서 이동)
