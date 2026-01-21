@@ -13,6 +13,7 @@ from pytz import timezone
 from streamlit_echarts import st_pyecharts
 from pyecharts import options as opts
 from pyecharts.charts import Line, Bar
+from pyecharts.commons.utils import JsCode
 
 # Streamlit 페이지 설정
 st.set_page_config(
@@ -810,14 +811,14 @@ with main_tab2:
                             series_name="경과조치 효과",
                             y_axis=effect_ratios,
                             stack="stack1",
-                            # 레이블은 여기서만 표시하고, 실제 데이터는 total_ratios(D)를 쓰도록 formatter 조정
+                            # JsCode를 사용하여 JS 엔진이 함수를 해석하게 함
                             label_opts=opts.LabelOpts(
                                 is_show=True, 
                                 position="top", 
-                                formatter="""function(params) {
+                                formatter=JsCode("""function(params) {
                                     var total_ratios = """ + str(total_ratios) + """;
                                     return total_ratios[params.dataIndex] + '%';
-                                }"""
+                                }""")
                             ),
                             itemstyle_opts=opts.ItemStyleOpts(color=color_sets[sector][1]),
                             markline_opts=opts.MarkLineOpts(
@@ -847,7 +848,7 @@ with main_tab2:
                             tooltip_opts=opts.TooltipOpts(
                                 trigger="axis", 
                                 axis_pointer_type="shadow",
-                                formatter="""function(params) {
+                                formatter=JsCode("""function(params) {
                                     var res = params[0].name + '<br/>';
                                     var total = 0;
                                     for(var i=0; i<params.length; i++) {
@@ -856,7 +857,7 @@ with main_tab2:
                                     }
                                     res += '<b>최종 비율 (경과후): ' + total + '%</b>';
                                     return res;
-                                }"""
+                                }""")
                             ),
                         )
                         
