@@ -887,13 +887,15 @@ with main_tab2:
                     render_sector_chart(sector, filtered_df, company_df, color_sets, weighted_avg)
             
             st.divider()
-            # 재보험 차트 (가로로 넓게 표시)
-            sector = '재보험'
-            sector_df = company_df[company_df['구분'] == sector]
-            sum_num = sector_df['eff_num'].sum()
-            sum_den = sector_df['eff_den'].sum()
-            weighted_avg = (sum_num / sum_den * 100) if sum_den > 0 else 0
-            render_sector_chart(sector, filtered_df, company_df, color_sets, weighted_avg)
+            # 재보험 차트 (상단 차트와 width를 맞추기 위해 2컬럼 레이아웃 사용)
+            col_re, col_empty = st.columns(2)
+            with col_re:
+                sector = '재보험'
+                sector_df = company_df[company_df['구분'] == sector]
+                sum_num = sector_df['eff_num'].sum()
+                sum_den = sector_df['eff_den'].sum()
+                weighted_avg = (sum_num / sum_den * 100) if sum_den > 0 else 0
+                render_sector_chart(sector, filtered_df, company_df, color_sets, weighted_avg)
             
             with st.expander("📍 상세 데이터 확인"):
                 # 표시용 데이터프레임 구성
