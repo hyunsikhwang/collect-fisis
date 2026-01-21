@@ -301,7 +301,7 @@ def render_sector_chart(sector, filtered_df, company_df, color_sets, weighted_av
         
         total_ratios.append(int(round(d_val, 0)))
 
-    bar = Bar(init_opts=opts.InitOpts(width="100%", height="500px", theme="white"))
+    bar = Bar(init_opts=opts.InitOpts(width="100%", height="500px", theme="white", renderer="svg"))
     bar.add_xaxis(xaxis_data=s_df['short_display_name'].tolist())
     
     # 1. 하단 바: 경과조치 전
@@ -690,7 +690,7 @@ with main_tab1:
             bond_df = bond_df[bond_df['기준년월'].isin(kics_months)].sort_values('기준년월')
         
         # pyecharts Line 객체 생성
-        line = Line(init_opts=opts.InitOpts(width="100%", height="600px", theme="white"))
+        line = Line(init_opts=opts.InitOpts(width="100%", height="600px", theme="white", renderer="svg"))
         line.add_xaxis(xaxis_data=x_data)
         
         # 색상 매핑
@@ -781,7 +781,7 @@ with main_tab1:
             toolbox_opts=opts.ToolboxOpts(is_show=True),
         )
         
-        st_pyecharts(line, height="600px")
+        st_pyecharts(line, height="600px", key="dashboard_line_chart")
         
         with st.expander("📍 상세 수치 데이터 확인"):
             st.dataframe(analysis_df, width="stretch")
