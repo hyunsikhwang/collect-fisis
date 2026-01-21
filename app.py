@@ -837,7 +837,7 @@ with main_tab2:
                         )
                         
                         bar.set_global_opts(
-                            title_opts=opts.TitleOpts(title=f"{sector}사별 K-ICS 비율 (누적: 경과전 + 효과)"),
+                            title_opts=opts.TitleOpts(title=f"{sector}사별 K-ICS 비율"),
                             xaxis_opts=opts.AxisOpts(
                                 axislabel_opts=opts.LabelOpts(rotate=45, interval=0, font_size=11)
                             ),
