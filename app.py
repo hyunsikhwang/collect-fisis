@@ -489,7 +489,7 @@ def load_company_solvency_data(target_month):
 
         # 5. 표시용 회사명 처리
         pdf['display_name'] = pdf.apply(
-            lambda r: f"{shorten_company_name(r['회사명'])}*" if r['is_fallback'] else shorten_company_name(r['회사명']), 
+            lambda r: f"{shorten_company_name(r['회사명'])}*" if not r['is_fallback'] else shorten_company_name(r['회사명']),
             axis=1
         )
 
@@ -916,7 +916,7 @@ elif selected_tab == "📊 회사별 현황 (Company Status)":
                 st.dataframe(pd.DataFrame({'누락 회사명': missing_companies}), width="stretch")
                 st.stop()
 
-            st.markdown(f"**조회 시점: {latest_m}** ( * 표시: 경과조치 적용 전 비율 사용 )")
+            st.markdown(f"**조회 시점: {latest_m}** ( * 표시: 경과조치 적용 후 비율 사용 )")
             
             # 제외할 회사 선택 UI
             all_companies = sorted(company_df['회사명'].unique().tolist())
@@ -932,7 +932,7 @@ elif selected_tab == "📊 회사별 현황 (Company Status)":
             
             # 회사명 영문명 적용 (시각화용)
             filtered_df['short_display_name'] = filtered_df.apply(
-                lambda r: f"{get_english_company_name(r['회사명'])}*" if r['is_fallback'] else get_english_company_name(r['회사명']),
+                lambda r: f"{get_english_company_name(r['회사명'])}*" if not r['is_fallback'] else get_english_company_name(r['회사명']),
                 axis=1
             )
             
