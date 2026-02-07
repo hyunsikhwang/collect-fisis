@@ -44,6 +44,50 @@ DB_NAME = "fisis_cache"
 TABLE_NAME = "insurance_stats"
 COLUMNS = ['구분', '회사코드', '회사명', '계정코드', '계정명', '기준년월', '단위', '값']
 
+# 회사명 한/영 매핑 (표시용)
+CompKoEn = {
+    'DB생명보험주식회사': 'DB Life',
+    'DGB생명보험주식회사': 'iM(DGB) Life',
+    '아이엠라이프생명보험 주식회사': 'iM(DGB) Life',
+    'KB라이프생명보험': 'KB Life',
+    '교보라이프플래닛생명보험주식회사': 'KyoboLP Life',
+    '교보생명보험주식회사': 'Kyobo Life',
+    '농협생명보험주식회사': 'NH Life',
+    '미래에셋생명보험주식회사': 'MiraeAsset Life',
+    '삼성생명보험주식회사': 'Samsung Life',
+    '신한라이프생명보험주식회사': 'Shinhan Life',
+    '아이비케이연금보험 주식회사': 'IBK Life',
+    '케이디비생명보험주식회사': 'KDB Life',
+    '하나생명보험주식회사': 'Hana Life',
+    '한화생명보험주식회사': 'Hanwha Life',
+    '흥국생명보험주식회사': 'HeungKuk Life',
+    '동양생명보험주식회사': 'Tongyang Life',
+    '라이나생명보험주식회사': 'Lina Life',
+    '메트라이프생명보험(주)': 'Met Life',
+    '비엔피파리바카디프생명보험주식회사': 'Cardif Life',
+    '에이비엘생명보험주식회사': 'ABL Life',
+    '에이아이에이생명보험 주식회사': 'AIA Life',
+    '처브라이프생명보험주식회사': 'Chubb Life',
+    '푸본현대생명보험주식회사': 'Fubon Life',
+    'DB손해보험주식회사': 'DB FM',
+    '농협손해보험주식회사': 'NH FM',
+    '롯데손해보험주식회사': 'Lotte FM',
+    '메리츠화재해상보험주식회사': 'Meritz FM',
+    '삼성화재해상보험주식회사': 'Samsung FM',
+    # '엠지손해보험주식회사': 'MG FM',
+    '주식회사KB손해보험': 'KB FM',
+    '하나손해보험주식회사': 'Hana FM',
+    '한화손해보험주식회사': 'Hanwha FM',
+    '현대해상화재보험주식회사': 'Hyundai FM',
+    '흥국화재해상보험주식회사': 'Heungkuk FM',
+    '신한EZ손해보험주식회사': 'ShinhanEZ FM',
+    '주식회사 카카오페이손해보험': 'Kakao FM',
+    '캐롯손해보험주식회사': 'Carrot FM',
+    '악사손해보험주식회사': 'AXA FM',
+    '에이스아메리칸화재해상보험주식회사': 'Ace FM',
+    '에이아이지손해보험주식회사': 'AIG FM',
+}
+
 def get_md_connection():
     """MotherDuck 연결 설정"""
     if not MD_TOKEN:
@@ -265,6 +309,12 @@ def shorten_company_name(name):
         short_name = short_name.replace(r, "")
     
     return short_name.strip()
+
+def get_english_company_name(name):
+    """차트 표시용 영문 회사명 반환"""
+    if not name:
+        return ""
+    return CompKoEn.get(name, "")
 
 def render_sector_chart(sector, filtered_df, company_df, color_sets, weighted_avg):
     """특정 업권의 누적 바 차트 및 평균선을 렌더링"""
@@ -848,6 +898,16 @@ elif selected_tab == "📊 회사별 현황 (Company Status)":
             # 제외 대상 제거
             company_df = company_df[company_df['구분'] != '제외'].copy()
 
+            # 영문명 매핑 검증 (누락이 있으면 차트 렌더링 중단)
+            missing_companies = sorted([c for c in company_df['회사명'].unique().tolist() if c not in CompKoEn])
+            if missing_companies:
+                st.error(
+                    f"영문 회사명 매핑 누락: {len(missing_companies)}개 회사. "
+                    "누락 방지를 위해 차트 렌더링을 중단했습니다. CompKoEn에 아래 회사를 추가해 주세요."
+                )
+                st.dataframe(pd.DataFrame({'누락 회사명': missing_companies}), width="stretch")
+                st.stop()
+
             st.markdown(f"**조회 시점: {latest_m}** ( * 표시: 경과조치 적용 전 비율 사용 )")
             
             # 제외할 회사 선택 UI
@@ -862,9 +922,9 @@ elif selected_tab == "📊 회사별 현황 (Company Status)":
             # 필터링 적용
             filtered_df = company_df[~company_df['회사명'].isin(excluded_companies)].copy()
             
-            # 회사명 축약 적용 (시각화용)
+            # 회사명 영문명 적용 (시각화용)
             filtered_df['short_display_name'] = filtered_df.apply(
-                lambda r: f"{shorten_company_name(r['회사명'])}*" if r['is_fallback'] else shorten_company_name(r['회사명']), 
+                lambda r: f"{get_english_company_name(r['회사명'])}*" if r['is_fallback'] else get_english_company_name(r['회사명']),
                 axis=1
             )
             
@@ -901,12 +961,13 @@ elif selected_tab == "📊 회사별 현황 (Company Status)":
             with st.expander("📍 상세 데이터 확인"):
                 # 표시용 데이터프레임 구성
                 display_df = filtered_df.copy()
+                display_df['영문회사명'] = display_df['회사명'].map(get_english_company_name)
                 # A, D 컬럼이 없을 수 있으므로 안전하게 처리
                 for col in ['A', 'D']:
                     if col not in display_df.columns:
                         display_df[col] = 0
                 
-                st.dataframe(display_df[['구분', '회사명', 'D', 'A', 'final_ratio', 'is_fallback']].rename(
+                st.dataframe(display_df[['구분', '회사명', '영문회사명', 'D', 'A', 'final_ratio', 'is_fallback']].rename(
                     columns={
                         'D': '비율(경과후)', 
                         'A': '비율(경과전)',
