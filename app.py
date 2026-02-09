@@ -546,14 +546,17 @@ def render_company_change_chart(change_df, sector, delta_col, chart_title, key_s
         return
 
     s_df = s_df.sort_values(delta_col, ascending=False)
-    s_df['display_name'] = s_df['company_name'].map(get_english_company_name).fillna("")
-    s_df['display_name'] = s_df.apply(
-        lambda r: r['display_name'] if r['display_name'] else shorten_company_name(r['company_name']),
-        axis=1
-    )
+    if 'english_name' in s_df.columns:
+        s_df['display_name'] = s_df['english_name']
+    else:
+        s_df['display_name'] = s_df['company_name'].map(get_english_company_name).fillna("")
+    s_df = s_df[s_df['display_name'].astype(str).str.strip() != ""].copy()
+    if s_df.empty:
+        st.info(f"{sector} 업권에 영문 회사명이 있는 데이터가 없습니다.")
+        return
 
     x_names = s_df['display_name'].tolist()
-    y_delta = [round(float(v), 2) for v in s_df[delta_col]]
+    y_delta = [round(float(v), 1) for v in s_df[delta_col]]
     prev_col = 'ratio_before_previous' if delta_col == 'delta_before' else 'ratio_after_previous'
     curr_col = 'ratio_before_current' if delta_col == 'delta_before' else 'ratio_after_current'
     y_prev = [round(float(v), 2) for v in s_df[prev_col]]
@@ -567,7 +570,7 @@ def render_company_change_chart(change_df, sector, delta_col, chart_title, key_s
         label_opts=opts.LabelOpts(
             is_show=True,
             position="right",
-            formatter=JsCode("function(p){return (p.value > 0 ? '+' : '') + p.value + '%p';}")
+            formatter=JsCode("function(p){return (p.value > 0 ? '+' : '') + Number(p.value).toFixed(1) + '%p';}")
         ),
         itemstyle_opts=opts.ItemStyleOpts(
             color=JsCode("""
@@ -584,7 +587,7 @@ def render_company_change_chart(change_df, sector, delta_col, chart_title, key_s
         title_opts=opts.TitleOpts(title=chart_title),
         xaxis_opts=opts.AxisOpts(
             name="증감 (%p)",
-            axislabel_opts=opts.LabelOpts(formatter="{value}")
+            axislabel_opts=opts.LabelOpts(formatter=JsCode("function(v){return Number(v).toFixed(1);}"))
         ),
         yaxis_opts=opts.AxisOpts(axislabel_opts=opts.LabelOpts(font_size=10)),
         tooltip_opts=opts.TooltipOpts(
@@ -593,13 +596,35 @@ def render_company_change_chart(change_df, sector, delta_col, chart_title, key_s
                 "function(p){"
                 f"var prev={json.dumps(y_prev)}; var curr={json.dumps(y_curr)};"
                 "var d=p.value; var sign=d>0?'+':'';"
-                "return p.name + '<br/>직전: ' + prev[p.dataIndex] + '%<br/>최근: ' + curr[p.dataIndex] + '%<br/><b>증감: ' + sign + d + '%p</b>';"
+                "return p.name + '<br/>직전: ' + prev[p.dataIndex] + '%<br/>최근: ' + curr[p.dataIndex] + '%<br/><b>증감: ' + sign + Number(d).toFixed(1) + '%p</b>';"
                 "}"
             )
         ),
     )
     bar.set_series_opts(markline_opts=opts.MarkLineOpts(data=[opts.MarkLineItem(x=0)]))
     st_pyecharts(bar, height="520px", key=f"company_change_{key_suffix}_{sector}", renderer="svg")
+
+def reclassify_company_sector(sector, company_name):
+    """Classify non-life rows into non-life/reinsurance/excluded buckets."""
+    if sector == '생명보험':
+        return '생명보험'
+    if sector == '손해보험':
+        if company_name in REINSURANCE_COMPANIES:
+            return '재보험'
+        if company_name in EXCLUDE_NON_LIFE:
+            return '제외'
+        return '손해보험'
+    return sector
+
+def apply_sector_reclassification(df):
+    """Apply consistent sector classification for company-level charts."""
+    if df.empty or 'sector' not in df.columns or 'company_name' not in df.columns:
+        return df
+
+    out = df.copy()
+    out['sector'] = out.apply(lambda r: reclassify_company_sector(r['sector'], r['company_name']), axis=1)
+    out = out[out['sector'] != '제외'].copy()
+    return out
 
 # 분석용 업권 분류 설정 (손해 업권 세분화용)
 EXCLUDE_NON_LIFE = [
@@ -1108,73 +1133,58 @@ elif selected_tab == "📉 회사별 변동 (Company Change)":
         if current_df.empty or previous_df.empty:
             st.warning("비교에 필요한 회사별 데이터가 부족합니다. 데이터 수집 후 다시 시도해주세요.")
         else:
+            current_df = apply_sector_reclassification(current_df)
+            previous_df = apply_sector_reclassification(previous_df)
             change_df = build_company_change_df(current_df, previous_df)
 
             if change_df.empty:
                 st.warning("두 분기 모두 존재하는 회사 데이터가 없어 변동을 계산할 수 없습니다.")
             else:
-                sectors = change_df['sector'].dropna().astype(str).unique().tolist()
-                life_sector = next((s for s in sectors if "생명" in s), None)
-                non_life_sector = next((s for s in sectors if "손해" in s), None)
+                change_df['english_name'] = change_df['company_name'].map(get_english_company_name).fillna("")
+                before_filter_count = len(change_df)
+                change_df = change_df[change_df['english_name'].astype(str).str.strip() != ""].copy()
+                filtered_out = before_filter_count - len(change_df)
 
-                if life_sector is None or non_life_sector is None:
-                    sorted_sectors = sorted(sectors)
-                    if life_sector is None and len(sorted_sectors) >= 1:
-                        life_sector = sorted_sectors[0]
-                    if non_life_sector is None and len(sorted_sectors) >= 2:
-                        non_life_sector = sorted_sectors[1]
+                if change_df.empty:
+                    st.warning("영문 회사명이 있는 회사가 없어 차트를 표시할 수 없습니다.")
+                else:
+                    if filtered_out > 0:
+                        st.caption(f"영문 회사명이 없는 회사 {filtered_out}개는 제외되었습니다.")
 
-                col_l, col_r = st.columns(2)
-                with col_l:
-                    if life_sector:
-                        render_company_change_chart(
-                            change_df,
-                            life_sector,
-                            'delta_before',
-                            f"{life_sector} - 경과조치 반영 전 증감",
-                            "life_before"
-                        )
-                    else:
-                        st.info("생명보험 업권 데이터가 없습니다.")
-                with col_r:
-                    if non_life_sector:
-                        render_company_change_chart(
-                            change_df,
-                            non_life_sector,
-                            'delta_before',
-                            f"{non_life_sector} - 경과조치 반영 전 증감",
-                            "nonlife_before"
-                        )
-                    else:
-                        st.info("손해보험 업권 데이터가 없습니다.")
+                    sector_order = ['생명보험', '손해보험', '재보험']
 
-                col_l2, col_r2 = st.columns(2)
-                with col_l2:
-                    if life_sector:
-                        render_company_change_chart(
-                            change_df,
-                            life_sector,
-                            'delta_after',
-                            f"{life_sector} - 경과조치 반영 후 증감",
-                            "life_after"
-                        )
-                with col_r2:
-                    if non_life_sector:
-                        render_company_change_chart(
-                            change_df,
-                            non_life_sector,
-                            'delta_after',
-                            f"{non_life_sector} - 경과조치 반영 후 증감",
-                            "nonlife_after"
-                        )
+                    row1_cols = st.columns(3)
+                    for idx, sector in enumerate(sector_order):
+                        with row1_cols[idx]:
+                            render_company_change_chart(
+                                change_df,
+                                sector,
+                                'delta_before',
+                                f"{sector} - 경과조치 반영 전 증감",
+                                f"{sector}_before"
+                            )
+
+                    row2_cols = st.columns(3)
+                    for idx, sector in enumerate(sector_order):
+                        with row2_cols[idx]:
+                            render_company_change_chart(
+                                change_df,
+                                sector,
+                                'delta_after',
+                                f"{sector} - 경과조치 반영 후 증감",
+                                f"{sector}_after"
+                            )
 
                 with st.expander("상세 데이터 확인"):
+                    detail_df = change_df[[
+                        'sector', 'company_name', 'english_name',
+                        'ratio_before_previous', 'ratio_before_current', 'delta_before',
+                        'ratio_after_previous', 'ratio_after_current', 'delta_after'
+                    ]].copy()
+                    detail_df['delta_before'] = detail_df['delta_before'].round(1)
+                    detail_df['delta_after'] = detail_df['delta_after'].round(1)
                     st.dataframe(
-                        change_df[[
-                            'sector', 'company_name',
-                            'ratio_before_previous', 'ratio_before_current', 'delta_before',
-                            'ratio_after_previous', 'ratio_after_current', 'delta_after'
-                        ]].sort_values(['sector', 'delta_after'], ascending=[True, False]),
+                        detail_df.sort_values(['sector', 'delta_after'], ascending=[True, False]),
                         width="stretch"
                     )
 
