@@ -1215,10 +1215,39 @@ elif selected_tab == "📉 회사별 변동 (Company Change)":
     else:
         latest_month = available_months[0]
         previous_month = available_months[1]
-        st.markdown(f"**비교 기준**: 최근 `{latest_month}` vs 직전 `{previous_month}`")
 
-        current_df, _ = load_company_solvency_data(latest_month)
-        previous_df, _ = load_company_solvency_data(previous_month)
+        with st.form("company_change_month_selector"):
+            col_cur, col_prev, col_btn = st.columns([1.2, 1.2, 0.8])
+            with col_cur:
+                selected_current_month = st.selectbox(
+                    "비교 시점 (Current)",
+                    options=available_months,
+                    index=0,
+                    help="증감 계산의 분자 기준 시점입니다. 기본값은 가장 최근 분기입니다.",
+                )
+            with col_prev:
+                default_prev_idx = available_months.index(previous_month) if previous_month in available_months else 1
+                selected_previous_month = st.selectbox(
+                    "대비 시점 (Baseline)",
+                    options=available_months,
+                    index=default_prev_idx,
+                    help="증감 계산의 기준 시점입니다. 기본값은 직전 분기입니다.",
+                )
+            with col_btn:
+                st.write("")
+                st.write("")
+                st.form_submit_button("비교 리프레시", use_container_width=True)
+
+        if selected_current_month == selected_previous_month:
+            st.warning("비교 시점과 대비 시점이 같습니다. 서로 다른 두 시점을 선택해 주세요.")
+            st.stop()
+
+        st.markdown(
+            f"**비교 기준**: Current `{selected_current_month}` vs Baseline `{selected_previous_month}`"
+        )
+
+        current_df, _ = load_company_solvency_data(selected_current_month)
+        previous_df, _ = load_company_solvency_data(selected_previous_month)
 
         if current_df.empty or previous_df.empty:
             st.warning("비교에 필요한 회사별 데이터가 부족합니다. 데이터 수집 후 다시 시도해주세요.")
