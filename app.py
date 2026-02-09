@@ -618,9 +618,8 @@ def render_company_change_chart(change_df, sector, delta_col, chart_title, key_s
     )
     bar.reversal_axis()
     bar.set_global_opts(
-        title_opts=opts.TitleOpts(title=chart_title, top=8),
-        legend_opts=opts.LegendOpts(top=40),
-        grid_opts=opts.GridOpts(left="34%", right="8%", top=96, bottom=28, contain_label=False),
+        title_opts=opts.TitleOpts(title=chart_title, pos_top="8px"),
+        legend_opts=opts.LegendOpts(pos_top="40px"),
         xaxis_opts=opts.AxisOpts(
             name="Delta (%p)",
             min_=axis_min,
@@ -652,6 +651,14 @@ def render_company_change_chart(change_df, sector, delta_col, chart_title, key_s
             )
         ),
     )
+    # Older pyecharts versions do not accept grid_opts in set_global_opts.
+    bar.options["grid"] = {
+        "left": "34%",
+        "right": "8%",
+        "top": 96,
+        "bottom": 28,
+        "containLabel": False,
+    }
 
     if apply_axis_break:
         bar.set_series_opts(
