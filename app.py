@@ -493,10 +493,113 @@ def load_company_solvency_data(target_month):
             axis=1
         )
 
+        # Downstream logic can use stable ASCII aliases regardless of locale/encoding.
+        dim_cols = pdf.columns[:3].tolist()
+        if len(dim_cols) >= 3:
+            pdf['sector'] = pdf[dim_cols[0]]
+            pdf['company_name'] = pdf[dim_cols[1]]
+            pdf['base_month'] = pdf[dim_cols[2]]
+
         return pdf, target_month
     except Exception as e:
         st.error(f"회사별 데이터 로드 실패: {e}")
         return pd.DataFrame(), ""
+
+def build_company_change_df(current_df, previous_df):
+    """Create latest-vs-previous K-ICS deltas per company."""
+    if current_df.empty or previous_df.empty:
+        return pd.DataFrame()
+
+    curr = current_df.copy()
+    prev = previous_df.copy()
+
+    for df in [curr, prev]:
+        if 'sector' not in df.columns or 'company_name' not in df.columns:
+            continue
+        if 'A' not in df.columns:
+            df['A'] = 0
+        if 'D' not in df.columns:
+            df['D'] = 0
+        df['ratio_before'] = pd.to_numeric(df['A'], errors='coerce').fillna(0)
+        # Keep "after" consistent with existing fallback rule when D is missing/invalid.
+        df['ratio_after'] = df.apply(lambda r: r['D'] if pd.notnull(r['D']) and r['D'] > 0 else r['A'], axis=1)
+
+    merged = curr[['sector', 'company_name', 'ratio_before', 'ratio_after']].merge(
+        prev[['sector', 'company_name', 'ratio_before', 'ratio_after']],
+        on=['sector', 'company_name'],
+        suffixes=('_current', '_previous'),
+        how='inner'
+    )
+
+    if merged.empty:
+        return pd.DataFrame()
+
+    merged['delta_before'] = merged['ratio_before_current'] - merged['ratio_before_previous']
+    merged['delta_after'] = merged['ratio_after_current'] - merged['ratio_after_previous']
+    return merged
+
+def render_company_change_chart(change_df, sector, delta_col, chart_title, key_suffix):
+    """Render a diverging horizontal bar chart for company-level deltas."""
+    s_df = change_df[change_df['sector'] == sector].copy()
+    if s_df.empty:
+        st.info(f"{sector} 데이터가 없습니다.")
+        return
+
+    s_df = s_df.sort_values(delta_col, ascending=False)
+    s_df['display_name'] = s_df['company_name'].map(get_english_company_name).fillna("")
+    s_df['display_name'] = s_df.apply(
+        lambda r: r['display_name'] if r['display_name'] else shorten_company_name(r['company_name']),
+        axis=1
+    )
+
+    x_names = s_df['display_name'].tolist()
+    y_delta = [round(float(v), 2) for v in s_df[delta_col]]
+    prev_col = 'ratio_before_previous' if delta_col == 'delta_before' else 'ratio_after_previous'
+    curr_col = 'ratio_before_current' if delta_col == 'delta_before' else 'ratio_after_current'
+    y_prev = [round(float(v), 2) for v in s_df[prev_col]]
+    y_curr = [round(float(v), 2) for v in s_df[curr_col]]
+
+    bar = Bar(init_opts=opts.InitOpts(width="100%", height="520px", theme="white", renderer="svg"))
+    bar.add_xaxis(xaxis_data=x_names)
+    bar.add_yaxis(
+        series_name="증감(최근-직전, %p)",
+        y_axis=y_delta,
+        label_opts=opts.LabelOpts(
+            is_show=True,
+            position="right",
+            formatter=JsCode("function(p){return (p.value > 0 ? '+' : '') + p.value + '%p';}")
+        ),
+        itemstyle_opts=opts.ItemStyleOpts(
+            color=JsCode("""
+            function(params){
+                if(params.value > 0){return '#1a9850';}
+                if(params.value < 0){return '#d73027';}
+                return '#7f8c8d';
+            }
+            """)
+        )
+    )
+    bar.reversal_axis()
+    bar.set_global_opts(
+        title_opts=opts.TitleOpts(title=chart_title),
+        xaxis_opts=opts.AxisOpts(
+            name="증감 (%p)",
+            axislabel_opts=opts.LabelOpts(formatter="{value}")
+        ),
+        yaxis_opts=opts.AxisOpts(axislabel_opts=opts.LabelOpts(font_size=10)),
+        tooltip_opts=opts.TooltipOpts(
+            trigger="item",
+            formatter=JsCode(
+                "function(p){"
+                f"var prev={json.dumps(y_prev)}; var curr={json.dumps(y_curr)};"
+                "var d=p.value; var sign=d>0?'+':'';"
+                "return p.name + '<br/>직전: ' + prev[p.dataIndex] + '%<br/>최근: ' + curr[p.dataIndex] + '%<br/><b>증감: ' + sign + d + '%p</b>';"
+                "}"
+            )
+        ),
+    )
+    bar.set_series_opts(markline_opts=opts.MarkLineOpts(data=[opts.MarkLineItem(x=0)]))
+    st_pyecharts(bar, height="520px", key=f"company_change_{key_suffix}_{sector}", renderer="svg")
 
 # 분석용 업권 분류 설정 (손해 업권 세분화용)
 EXCLUDE_NON_LIFE = [
@@ -723,7 +826,7 @@ st.title("📊 보험사 지급여력비율 분석 대시보드")
 # 메인 탭 분리: 분석 대시보드, 회사별 현황, 데이터 수집기
 selected_tab = st.segmented_control(
     "메뉴 선택",
-    ["📈 분석 대시보드 (Dashboard)", "📊 회사별 현황 (Company Status)", "📡 데이터 수집기 (Collector)"],
+    ["📈 분석 대시보드 (Dashboard)", "📊 회사별 현황 (Company Status)", "📉 회사별 변동 (Company Change)", "📡 데이터 수집기 (Collector)"],
     default="📈 분석 대시보드 (Dashboard)",
     label_visibility="collapsed"
 )
@@ -987,6 +1090,93 @@ elif selected_tab == "📊 회사별 현황 (Company Status)":
             st.warning(f"{selected_month}에 대한 데이터가 없습니다. 먼저 데이터 수집을 진행해 주세요.")
     else:
         st.warning("표시할 회사별 데이터가 없습니다. 먼저 '데이터 수집기' 탭에서 데이터를 수집해 주세요.")
+
+elif selected_tab == "📉 회사별 변동 (Company Change)":
+    st.subheader("📉 회사별 K-ICS 변동 (최근 분기 vs 직전 분기)")
+
+    available_months = get_available_months()
+    if len(available_months) < 2:
+        st.warning("최근/직전 분기 비교를 위해 최소 2개 분기 데이터가 필요합니다.")
+    else:
+        latest_month = available_months[0]
+        previous_month = available_months[1]
+        st.markdown(f"**비교 기준**: 최근 `{latest_month}` vs 직전 `{previous_month}`")
+
+        current_df, _ = load_company_solvency_data(latest_month)
+        previous_df, _ = load_company_solvency_data(previous_month)
+
+        if current_df.empty or previous_df.empty:
+            st.warning("비교에 필요한 회사별 데이터가 부족합니다. 데이터 수집 후 다시 시도해주세요.")
+        else:
+            change_df = build_company_change_df(current_df, previous_df)
+
+            if change_df.empty:
+                st.warning("두 분기 모두 존재하는 회사 데이터가 없어 변동을 계산할 수 없습니다.")
+            else:
+                sectors = change_df['sector'].dropna().astype(str).unique().tolist()
+                life_sector = next((s for s in sectors if "생명" in s), None)
+                non_life_sector = next((s for s in sectors if "손해" in s), None)
+
+                if life_sector is None or non_life_sector is None:
+                    sorted_sectors = sorted(sectors)
+                    if life_sector is None and len(sorted_sectors) >= 1:
+                        life_sector = sorted_sectors[0]
+                    if non_life_sector is None and len(sorted_sectors) >= 2:
+                        non_life_sector = sorted_sectors[1]
+
+                col_l, col_r = st.columns(2)
+                with col_l:
+                    if life_sector:
+                        render_company_change_chart(
+                            change_df,
+                            life_sector,
+                            'delta_before',
+                            f"{life_sector} - 경과조치 반영 전 증감",
+                            "life_before"
+                        )
+                    else:
+                        st.info("생명보험 업권 데이터가 없습니다.")
+                with col_r:
+                    if non_life_sector:
+                        render_company_change_chart(
+                            change_df,
+                            non_life_sector,
+                            'delta_before',
+                            f"{non_life_sector} - 경과조치 반영 전 증감",
+                            "nonlife_before"
+                        )
+                    else:
+                        st.info("손해보험 업권 데이터가 없습니다.")
+
+                col_l2, col_r2 = st.columns(2)
+                with col_l2:
+                    if life_sector:
+                        render_company_change_chart(
+                            change_df,
+                            life_sector,
+                            'delta_after',
+                            f"{life_sector} - 경과조치 반영 후 증감",
+                            "life_after"
+                        )
+                with col_r2:
+                    if non_life_sector:
+                        render_company_change_chart(
+                            change_df,
+                            non_life_sector,
+                            'delta_after',
+                            f"{non_life_sector} - 경과조치 반영 후 증감",
+                            "nonlife_after"
+                        )
+
+                with st.expander("상세 데이터 확인"):
+                    st.dataframe(
+                        change_df[[
+                            'sector', 'company_name',
+                            'ratio_before_previous', 'ratio_before_current', 'delta_before',
+                            'ratio_after_previous', 'ratio_after_current', 'delta_after'
+                        ]].sort_values(['sector', 'delta_after'], ascending=[True, False]),
+                        width="stretch"
+                    )
 
 elif selected_tab == "📡 데이터 수집기 (Collector)":
     st.subheader("📡 FSS Open API 데이터 수집")
