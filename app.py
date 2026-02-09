@@ -1213,6 +1213,18 @@ elif selected_tab == "📉 회사별 변동 (Company Change)":
     if len(available_months) < 2:
         st.warning("최근/직전 분기 비교를 위해 최소 2개 분기 데이터가 필요합니다.")
     else:
+        def to_quarter_label(yyyymm):
+            """Convert YYYYMM to 'YYYY년 Q분기' label for UI."""
+            s = str(yyyymm)
+            if len(s) != 6 or not s.isdigit():
+                return s
+            yyyy = s[:4]
+            mm = int(s[4:6])
+            if mm < 1 or mm > 12:
+                return s
+            q = (mm - 1) // 3 + 1
+            return f"{yyyy}년 {q}분기"
+
         latest_month = available_months[0]
         previous_month = available_months[1]
 
@@ -1223,6 +1235,7 @@ elif selected_tab == "📉 회사별 변동 (Company Change)":
                     "비교 시점 (Current)",
                     options=available_months,
                     index=0,
+                    format_func=to_quarter_label,
                     help="증감 계산의 분자 기준 시점입니다. 기본값은 가장 최근 분기입니다.",
                 )
             with col_prev:
@@ -1231,6 +1244,7 @@ elif selected_tab == "📉 회사별 변동 (Company Change)":
                     "대비 시점 (Baseline)",
                     options=available_months,
                     index=default_prev_idx,
+                    format_func=to_quarter_label,
                     help="증감 계산의 기준 시점입니다. 기본값은 직전 분기입니다.",
                 )
             with col_btn:
@@ -1243,7 +1257,7 @@ elif selected_tab == "📉 회사별 변동 (Company Change)":
             st.stop()
 
         st.markdown(
-            f"**비교 기준**: Current `{selected_current_month}` vs Baseline `{selected_previous_month}`"
+            f"**비교 기준**: Current `{to_quarter_label(selected_current_month)}` vs Baseline `{to_quarter_label(selected_previous_month)}`"
         )
 
         current_df, _ = load_company_solvency_data(selected_current_month)
