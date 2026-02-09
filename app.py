@@ -660,6 +660,7 @@ def render_company_change_chart(change_df, sector, delta_col, chart_title, key_s
         "containLabel": False,
     }
 
+    compression_caption = None
     if apply_axis_break:
         bar.set_series_opts(
             markline_opts=opts.MarkLineOpts(
@@ -670,13 +671,15 @@ def render_company_change_chart(change_df, sector, delta_col, chart_title, key_s
                 ]
             )
         )
-        st.caption(
+        compression_caption = (
             f"Axis compression applied: |delta| >= {break_start:.1f}%p is shown at {break_scale:.2f}x scale."
         )
     else:
         bar.set_series_opts(markline_opts=opts.MarkLineOpts(data=[opts.MarkLineItem(x=0)]))
 
     st_pyecharts(bar, height="520px", key=f"company_change_{key_suffix}_{sector}", renderer="svg")
+    if compression_caption:
+        st.caption(compression_caption)
 
 
 def reclassify_company_sector(sector, company_name):
