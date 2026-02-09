@@ -1,4 +1,4 @@
-import streamlit as st
+﻿import streamlit as st
 import aiohttp
 import asyncio
 import pandas as pd
@@ -27,7 +27,7 @@ st.markdown(
     """
     <style>
     .stApp .block-container {
-        padding-top: 1rem;
+        padding-top: 1.5rem;
     }
     </style>
     """,
