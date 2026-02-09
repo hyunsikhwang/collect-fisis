@@ -1269,6 +1269,7 @@ elif selected_tab == "📉 회사별 변동 (Company Change)":
             current_df = apply_sector_reclassification(current_df)
             previous_df = apply_sector_reclassification(previous_df)
             change_df = build_company_change_df(current_df, previous_df)
+            chart_df = pd.DataFrame()
 
             if change_df.empty:
                 st.warning("두 분기 모두 존재하는 회사 데이터가 없어 변동을 계산할 수 없습니다.")
@@ -1284,13 +1285,70 @@ elif selected_tab == "📉 회사별 변동 (Company Change)":
                     if filtered_out > 0:
                         st.caption(f"영문 회사명이 없는 회사 {filtered_out}개는 제외되었습니다.")
 
+                    # Exclusion UX: searchable multi-select + quick outlier presets.
+                    change_df = change_df.copy()
+                    change_df['company_id'] = change_df['sector'].astype(str) + "|" + change_df['company_name'].astype(str)
+                    change_df['abs_delta_max'] = change_df[['delta_before', 'delta_after']].abs().max(axis=1)
+
+                    pair_key = f"{selected_current_month}_{selected_previous_month}"
+                    exclude_key = f"change_exclude_ids_{pair_key}"
+                    if exclude_key not in st.session_state:
+                        st.session_state[exclude_key] = []
+
+                    st.markdown("#### 왜곡 방지용 제외 회사 선택")
+                    ui_col1, ui_col2, ui_col3, ui_col4 = st.columns([1, 1, 1, 2])
+                    with ui_col1:
+                        recommend_top_n = st.selectbox(
+                            "추천 개수",
+                            options=[3, 5, 10, 15],
+                            index=1,
+                            help="변동폭 절대값 기준 상위 회사를 빠르게 제외 후보로 반영합니다.",
+                        )
+                    with ui_col2:
+                        if st.button("추천 상위 적용", use_container_width=True):
+                            top_ids = change_df.sort_values('abs_delta_max', ascending=False)['company_id'].head(recommend_top_n).tolist()
+                            st.session_state[exclude_key] = top_ids
+                    with ui_col3:
+                        if st.button("선택 초기화", use_container_width=True):
+                            st.session_state[exclude_key] = []
+                    with ui_col4:
+                        st.caption(
+                            "검색창에서 회사명(한글/영문)으로 빠르게 찾을 수 있습니다. "
+                            "라벨 끝의 `maxΔ`는 두 지표 중 최대 변동폭(%p)입니다."
+                        )
+
+                    option_df = change_df.sort_values(['abs_delta_max', 'sector', 'english_name'], ascending=[False, True, True]).copy()
+                    option_ids = option_df['company_id'].tolist()
+                    option_labels = {
+                        r['company_id']: f"[{r['sector']}] {r['english_name']} ({r['company_name']}) | maxΔ {r['abs_delta_max']:.1f}%p"
+                        for _, r in option_df.iterrows()
+                    }
+
+                    selected_exclude_ids = st.multiselect(
+                        "차트/표에서 제외할 회사",
+                        options=option_ids,
+                        default=[x for x in st.session_state[exclude_key] if x in option_ids],
+                        format_func=lambda x: option_labels.get(x, x),
+                        help="선택된 회사는 전체 차트 스케일 왜곡 방지를 위해 표시에서 제외됩니다.",
+                    )
+                    st.session_state[exclude_key] = selected_exclude_ids
+
+                    chart_df = change_df[~change_df['company_id'].isin(selected_exclude_ids)].copy()
+                    excluded_count = len(selected_exclude_ids)
+                    if excluded_count > 0:
+                        st.caption(f"제외 적용: {excluded_count}개 회사")
+
+                    if chart_df.empty:
+                        st.warning("제외 조건 적용 후 표시할 회사가 없습니다. 제외 회사를 줄여주세요.")
+                        st.stop()
+
                     sector_order = ['생명보험', '손해보험', '재보험']
 
                     row1_cols = st.columns(3)
                     for idx, sector in enumerate(sector_order):
                         with row1_cols[idx]:
                             render_company_change_chart(
-                                change_df,
+                                chart_df,
                                 sector,
                                 'delta_before',
                                 f"{sector} - 경과조치 반영 전 증감",
@@ -1301,7 +1359,7 @@ elif selected_tab == "📉 회사별 변동 (Company Change)":
                     for idx, sector in enumerate(sector_order):
                         with row2_cols[idx]:
                             render_company_change_chart(
-                                change_df,
+                                chart_df,
                                 sector,
                                 'delta_after',
                                 f"{sector} - 경과조치 반영 후 증감",
@@ -1309,17 +1367,20 @@ elif selected_tab == "📉 회사별 변동 (Company Change)":
                             )
 
                 with st.expander("상세 데이터 확인"):
-                    detail_df = change_df[[
-                        'sector', 'company_name', 'english_name',
-                        'ratio_before_previous', 'ratio_before_current', 'delta_before',
-                        'ratio_after_previous', 'ratio_after_current', 'delta_after'
-                    ]].copy()
-                    detail_df['delta_before'] = detail_df['delta_before'].round(1)
-                    detail_df['delta_after'] = detail_df['delta_after'].round(1)
-                    st.dataframe(
-                        detail_df.sort_values(['sector', 'delta_after'], ascending=[True, False]),
-                        width="stretch"
-                    )
+                    if chart_df.empty:
+                        st.info("표시할 상세 데이터가 없습니다.")
+                    else:
+                        detail_df = chart_df[[
+                            'sector', 'company_name', 'english_name',
+                            'ratio_before_previous', 'ratio_before_current', 'delta_before',
+                            'ratio_after_previous', 'ratio_after_current', 'delta_after'
+                        ]].copy()
+                        detail_df['delta_before'] = detail_df['delta_before'].round(1)
+                        detail_df['delta_after'] = detail_df['delta_after'].round(1)
+                        st.dataframe(
+                            detail_df.sort_values(['sector', 'delta_after'], ascending=[True, False]),
+                            width="stretch"
+                        )
 
 elif selected_tab == "📡 데이터 수집기 (Collector)":
     st.subheader("📡 FSS Open API 데이터 수집")
