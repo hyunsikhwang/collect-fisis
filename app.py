@@ -22,6 +22,18 @@ st.set_page_config(
     layout="wide"
 )
 
+# Reduce Streamlit's default large top padding.
+st.markdown(
+    """
+    <style>
+    .stApp .block-container {
+        padding-top: 1rem;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 # 비동기 루프 충돌 방지
 nest_asyncio.apply()
 
