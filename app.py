@@ -542,67 +542,135 @@ def render_company_change_chart(change_df, sector, delta_col, chart_title, key_s
     """Render a diverging horizontal bar chart for company-level deltas."""
     s_df = change_df[change_df['sector'] == sector].copy()
     if s_df.empty:
-        st.info(f"{sector} 데이터가 없습니다.")
+        st.info(f"No data in {sector} sector.")
         return
 
     s_df = s_df.sort_values(delta_col, ascending=False)
-    if 'english_name' in s_df.columns:
+    if "english_name" in s_df.columns:
         s_df['display_name'] = s_df['english_name']
     else:
         s_df['display_name'] = s_df['company_name'].map(get_english_company_name).fillna("")
     s_df = s_df[s_df['display_name'].astype(str).str.strip() != ""].copy()
     if s_df.empty:
-        st.info(f"{sector} 업권에 영문 회사명이 있는 데이터가 없습니다.")
+        st.info(f"No companies with English names in {sector} sector.")
         return
 
     x_names = s_df['display_name'].tolist()
     y_delta = [round(float(v), 1) for v in s_df[delta_col]]
-    prev_col = 'ratio_before_previous' if delta_col == 'delta_before' else 'ratio_after_previous'
-    curr_col = 'ratio_before_current' if delta_col == 'delta_before' else 'ratio_after_current'
+    prev_col = "ratio_before_previous" if delta_col == "delta_before" else "ratio_after_previous"
+    curr_col = "ratio_before_current" if delta_col == "delta_before" else "ratio_after_current"
     y_prev = [round(float(v), 2) for v in s_df[prev_col]]
     y_curr = [round(float(v), 2) for v in s_df[curr_col]]
+
+    # Axis-break-like compression for extreme outliers so smaller changes stay visible.
+    abs_delta = sorted([abs(v) for v in y_delta], reverse=True)
+    apply_axis_break = False
+    break_start = 0.0
+    break_scale = 0.35
+    if len(abs_delta) >= 2 and abs_delta[1] > 0:
+        ratio_gap = abs_delta[0] / abs_delta[1]
+        if ratio_gap >= 2.8 and abs_delta[0] >= 20:
+            apply_axis_break = True
+            break_start = round(max(8.0, abs_delta[1] * 1.15), 1)
+
+    def compress_delta(v):
+        if not apply_axis_break:
+            return round(v, 3)
+        sign = -1 if v < 0 else 1
+        av = abs(v)
+        if av <= break_start:
+            return round(v, 3)
+        return round(sign * (break_start + (av - break_start) * break_scale), 3)
+
+    chart_points = [{"value": compress_delta(v), "actual": v} for v in y_delta]
+    max_abs_for_axis = max(abs(compress_delta(v)) for v in y_delta) if y_delta else 1
+    axis_pad = max(2.0, max_abs_for_axis * 0.08)
+    axis_min = round(-(max_abs_for_axis + axis_pad), 2)
+    axis_max = round(max_abs_for_axis + axis_pad, 2)
 
     bar = Bar(init_opts=opts.InitOpts(width="100%", height="520px", theme="white", renderer="svg"))
     bar.add_xaxis(xaxis_data=x_names)
     bar.add_yaxis(
-        series_name="증감(최근-직전, %p)",
-        y_axis=y_delta,
+        series_name="Delta (latest-previous, %p)",
+        y_axis=chart_points,
         label_opts=opts.LabelOpts(
             is_show=True,
             position="right",
-            formatter=JsCode("function(p){return (p.value > 0 ? '+' : '') + Number(p.value).toFixed(1) + '%p';}")
+            formatter=JsCode(
+                "function(p){"
+                "var raw=(p.data && p.data.actual!==undefined)?p.data.actual:p.value;"
+                "return (raw > 0 ? '+' : '') + Number(raw).toFixed(1) + '%p';"
+                "}"
+            )
         ),
         itemstyle_opts=opts.ItemStyleOpts(
-            color=JsCode("""
+            color=JsCode(
+                """
             function(params){
-                if(params.value > 0){return '#1a9850';}
-                if(params.value < 0){return '#d73027';}
+                var raw=(params.data && params.data.actual!==undefined)?params.data.actual:params.value;
+                if(raw > 0){return '#1a9850';}
+                if(raw < 0){return '#d73027';}
                 return '#7f8c8d';
             }
-            """)
+            """
+            )
         )
     )
     bar.reversal_axis()
     bar.set_global_opts(
-        title_opts=opts.TitleOpts(title=chart_title),
+        title_opts=opts.TitleOpts(title=chart_title, top=8),
+        legend_opts=opts.LegendOpts(top=40),
+        grid_opts=opts.GridOpts(left="34%", right="8%", top=96, bottom=28, contain_label=False),
         xaxis_opts=opts.AxisOpts(
-            name="증감 (%p)",
-            axislabel_opts=opts.LabelOpts(formatter=JsCode("function(v){return Number(v).toFixed(1);}"))
+            name="Delta (%p)",
+            min_=axis_min,
+            max_=axis_max,
+            axislabel_opts=opts.LabelOpts(
+                formatter=JsCode(
+                    "function(v){"
+                    f"var hasBreak={str(apply_axis_break).lower()};"
+                    f"var b={break_start};"
+                    f"var c={break_scale};"
+                    "if(!hasBreak){return Number(v).toFixed(1);}"
+                    "var s=v<0?-1:1; var a=Math.abs(v);"
+                    "if(a<=b){return Number(v).toFixed(1);}"
+                    "var restored=s*(b+((a-b)/c));"
+                    "return Number(restored).toFixed(1);"
+                    "}"
+                )
+            )
         ),
-        yaxis_opts=opts.AxisOpts(axislabel_opts=opts.LabelOpts(font_size=10)),
+        yaxis_opts=opts.AxisOpts(axislabel_opts=opts.LabelOpts(font_size=11)),
         tooltip_opts=opts.TooltipOpts(
             trigger="item",
             formatter=JsCode(
                 "function(p){"
                 f"var prev={json.dumps(y_prev)}; var curr={json.dumps(y_curr)};"
-                "var d=p.value; var sign=d>0?'+':'';"
-                "return p.name + '<br/>직전: ' + prev[p.dataIndex] + '%<br/>최근: ' + curr[p.dataIndex] + '%<br/><b>증감: ' + sign + Number(d).toFixed(1) + '%p</b>';"
+                "var d=(p.data && p.data.actual!==undefined)?p.data.actual:p.value; var sign=d>0?'+':'';"
+                "return p.name + '<br/>Previous: ' + prev[p.dataIndex] + '%<br/>Latest: ' + curr[p.dataIndex] + '%<br/><b>Delta: ' + sign + Number(d).toFixed(1) + '%p</b>';"
                 "}"
             )
         ),
     )
-    bar.set_series_opts(markline_opts=opts.MarkLineOpts(data=[opts.MarkLineItem(x=0)]))
+
+    if apply_axis_break:
+        bar.set_series_opts(
+            markline_opts=opts.MarkLineOpts(
+                data=[
+                    opts.MarkLineItem(x=0),
+                    opts.MarkLineItem(x=compress_delta(break_start)),
+                    opts.MarkLineItem(x=compress_delta(-break_start)),
+                ]
+            )
+        )
+        st.caption(
+            f"Axis compression applied: |delta| >= {break_start:.1f}%p is shown at {break_scale:.2f}x scale."
+        )
+    else:
+        bar.set_series_opts(markline_opts=opts.MarkLineOpts(data=[opts.MarkLineItem(x=0)]))
+
     st_pyecharts(bar, height="520px", key=f"company_change_{key_suffix}_{sector}", renderer="svg")
+
 
 def reclassify_company_sector(sector, company_name):
     """Classify non-life rows into non-life/reinsurance/excluded buckets."""
