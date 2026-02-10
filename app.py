@@ -1034,6 +1034,7 @@ if selected_tab == "📈 분석 대시보드 (Dashboard)":
                 "🏢 회사 선택",
                 options=available_companies,
                 index=0,
+                format_func=lambda name: get_english_company_name(name) if get_english_company_name(name) else name,
                 key="dashboard_company_selector"
             )
 
