@@ -1008,7 +1008,6 @@ selected_tab = st.segmented_control(
 
 if selected_tab == "📈 Trend":
     st.subheader("📊 K-ICS 비율 추이 분석")
-    st.info("MotherDuck에 저장된 모든 과거 데이터를 기반으로 시계열 분석을 수행합니다.")
     
     analysis_df = load_kics_analysis_data()
     company_ts_df = load_company_kics_timeseries()
