@@ -1000,11 +1000,11 @@ async def run_async_collection():
 st.title("📊 K-ICS Ratio Dashboard")
 
 # 메인 탭 분리: 분석 대시보드, 회사별 현황, 데이터 수집기
-selected_tab = st.segmented_control(
-    "메뉴 선택",
-    ["📈 Trend", "📊 Snapshot", "📉 Changes", "📡 Collector"],
-    default="📈 Trend",
-    label_visibility="collapsed"
+main_tabs = ["📈 Trend", "📊 Snapshot", "📉 Changes", "📡 Collector"]
+selected_tab = ui.tabs(
+    options=main_tabs,
+    default_value=main_tabs[0],
+    key="main_tabs",
 )
 
 if selected_tab == "📈 Trend":
