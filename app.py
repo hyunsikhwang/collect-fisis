@@ -1029,14 +1029,20 @@ if selected_tab == "📈 분석 대시보드 (Dashboard)":
 
         selected_company = None
         if not company_ts_df.empty:
-            available_companies = sorted(company_ts_df['회사명'].unique().tolist())
-            selected_company = st.selectbox(
-                "🏢 회사 선택",
-                options=available_companies,
-                index=0,
-                format_func=lambda name: get_english_company_name(name) if get_english_company_name(name) else name,
-                key="dashboard_company_selector"
-            )
+            available_companies = sorted([
+                c for c in company_ts_df['회사명'].unique().tolist()
+                if get_english_company_name(c).strip() != ""
+            ])
+            if not available_companies:
+                st.warning("영문 회사명 매핑이 있는 회사가 없어 회사 차트를 표시할 수 없습니다.")
+            else:
+                selected_company = st.selectbox(
+                    "🏢 회사 선택",
+                    options=available_companies,
+                    index=0,
+                    format_func=lambda name: get_english_company_name(name) if get_english_company_name(name) else name,
+                    key="dashboard_company_selector"
+                )
 
         left_col, right_col = st.columns(2)
 
@@ -1145,6 +1151,8 @@ if selected_tab == "📈 분석 대시보드 (Dashboard)":
         with right_col:
             if company_ts_df.empty:
                 st.warning("회사별 시계열 데이터가 없어 회사 차트를 표시할 수 없습니다.")
+            elif selected_company is None:
+                st.warning("영문 회사명 매핑이 있는 회사를 찾을 수 없어 회사 차트를 표시할 수 없습니다.")
             else:
                 company_line = Line(init_opts=opts.InitOpts(width="100%", height="500px", theme="white", renderer="svg"))
                 company_line.add_xaxis(xaxis_data=x_data)
