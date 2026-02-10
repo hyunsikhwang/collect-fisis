@@ -1131,6 +1131,13 @@ if selected_tab == "📈 분석 대시보드 (Dashboard)":
                 ],
                 toolbox_opts=opts.ToolboxOpts(is_show=True),
             )
+            line.options["grid"] = {
+                "left": "8%",
+                "right": "12%",
+                "top": 110,
+                "bottom": 85,
+                "containLabel": True,
+            }
 
             st_pyecharts(line, height="450px", key="dashboard_line_chart", renderer="svg")
 
@@ -1211,6 +1218,13 @@ if selected_tab == "📈 분석 대시보드 (Dashboard)":
                     ],
                     toolbox_opts=opts.ToolboxOpts(is_show=True),
                 )
+                company_line.options["grid"] = {
+                    "left": "8%",
+                    "right": "12%",
+                    "top": 110,
+                    "bottom": 85,
+                    "containLabel": True,
+                }
 
                 st_pyecharts(company_line, height="450px", key="dashboard_company_line_chart", renderer="svg")
         
