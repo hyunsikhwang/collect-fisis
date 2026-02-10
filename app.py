@@ -1118,9 +1118,9 @@ if selected_tab == "📈 분석 대시보드 (Dashboard)":
                     splitline_opts=opts.SplitLineOpts(is_show=True),
                 ),
                 legend_opts=opts.LegendOpts(
-                    pos_right="5%",
-                    pos_top="5%",
-                    orient="vertical",
+                    pos_left="center",
+                    pos_top="8%",
+                    orient="horizontal",
                     selected_map=selected_map,
                     background_color="rgba(255,255,255,0.7)",
                     border_color="#ccc"
@@ -1134,7 +1134,7 @@ if selected_tab == "📈 분석 대시보드 (Dashboard)":
             line.options["grid"] = {
                 "left": "8%",
                 "right": "12%",
-                "top": 110,
+                "top": 130,
                 "bottom": 85,
                 "containLabel": True,
             }
@@ -1206,9 +1206,9 @@ if selected_tab == "📈 분석 대시보드 (Dashboard)":
                         splitline_opts=opts.SplitLineOpts(is_show=True),
                     ),
                     legend_opts=opts.LegendOpts(
-                        pos_right="5%",
-                        pos_top="5%",
-                        orient="vertical",
+                        pos_left="center",
+                        pos_top="8%",
+                        orient="horizontal",
                         background_color="rgba(255,255,255,0.7)",
                         border_color="#ccc"
                     ),
@@ -1221,7 +1221,7 @@ if selected_tab == "📈 분석 대시보드 (Dashboard)":
                 company_line.options["grid"] = {
                     "left": "8%",
                     "right": "12%",
-                    "top": 110,
+                    "top": 130,
                     "bottom": 85,
                     "containLabel": True,
                 }
