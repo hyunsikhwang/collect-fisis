@@ -1027,6 +1027,16 @@ if selected_tab == "📈 분석 대시보드 (Dashboard)":
             kics_months = analysis_df['기준년월'].unique()
             bond_df = bond_df[bond_df['기준년월'].isin(kics_months)].sort_values('기준년월')
 
+        selected_company = None
+        if not company_ts_df.empty:
+            available_companies = sorted(company_ts_df['회사명'].unique().tolist())
+            selected_company = st.selectbox(
+                "🏢 회사 선택",
+                options=available_companies,
+                index=0,
+                key="dashboard_company_selector"
+            )
+
         left_col, right_col = st.columns(2)
 
         with left_col:
@@ -1128,14 +1138,6 @@ if selected_tab == "📈 분석 대시보드 (Dashboard)":
             if company_ts_df.empty:
                 st.warning("회사별 시계열 데이터가 없어 회사 차트를 표시할 수 없습니다.")
             else:
-                available_companies = sorted(company_ts_df['회사명'].unique().tolist())
-                selected_company = st.selectbox(
-                    "🏢 회사 선택",
-                    options=available_companies,
-                    index=0,
-                    key="dashboard_company_selector"
-                )
-
                 company_line = Line(init_opts=opts.InitOpts(width="100%", height="600px", theme="white", renderer="svg"))
                 company_line.add_xaxis(xaxis_data=x_data)
 
