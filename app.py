@@ -1,4 +1,5 @@
 ﻿import streamlit as st
+import streamlit_shadcn_ui as ui
 import aiohttp
 import asyncio
 import pandas as pd
@@ -1616,13 +1617,17 @@ elif selected_tab == "📡 Collector":
                 # 결과 섹션
                 st.divider()
                 st.success(f"✅ {TARGET_MONTH} 데이터 처리가 완료되었습니다.")
-                
-                tab_res1, tab_res2 = st.tabs(["📋 요약 테이블 (Pivot)", "📄 RAW 데이터"])
-                
-                with tab_res1:
+                result_tabs = ["📋 요약 테이블 (Pivot)", "📄 RAW 데이터"]
+                selected_result_tab = ui.tabs(
+                    options=result_tabs,
+                    default_value=result_tabs[0],
+                    key="collector_result_tabs",
+                )
+
+                if selected_result_tab == "📋 요약 테이블 (Pivot)":
                     st.subheader(f"{TARGET_MONTH} 수집 결과 (요약)")
                     st.dataframe(df_pivot, width="stretch")
-                    
+
                     # CSV 다운로드
                     csv = df_pivot.to_csv(index=False, encoding='utf-8-sig')
                     st.download_button(
@@ -1632,7 +1637,7 @@ elif selected_tab == "📡 Collector":
                         mime="text/csv"
                     )
 
-                with tab_res2:
+                elif selected_result_tab == "📄 RAW 데이터":
                     st.subheader(f"{TARGET_MONTH} RAW 데이터")
                     st.dataframe(df, width="stretch")
                 
@@ -1640,3 +1645,4 @@ elif selected_tab == "📡 Collector":
                 st.info("💡 새로운 데이터가 저장되었습니다. 'Trend' 탭으로 이동하여 차트를 확인해 보세요.")
             else:
                 st.warning("수집된 데이터가 없습니다. API Key나 기준년월을 확인해주세요.")
+

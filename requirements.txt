@@ -1,4 +1,4 @@
-streamlit>=1.40.0
+﻿streamlit>=1.40.0
 aiohttp
 pandas
 nest_asyncio
@@ -8,3 +8,4 @@ requests
 pytz
 streamlit-echarts
 pyecharts
+streamlit-shadcn-ui
