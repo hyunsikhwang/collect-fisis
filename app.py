@@ -17,7 +17,7 @@ from pyecharts.commons.utils import JsCode
 
 # Streamlit 페이지 설정
 st.set_page_config(
-    page_title="보험사 지급여력비율 수집기",
+    page_title="K-ICS Dashboard",
     page_icon="📊",
     layout="wide"
 )
@@ -276,6 +276,66 @@ def load_kics_analysis_data():
         return final_df
     except Exception as e:
         st.error(f"분석 데이터 로드 실패: {e}")
+        return pd.DataFrame()
+
+def load_company_kics_timeseries():
+    """회사별 K-ICS 시계열 데이터 로드 및 계산"""
+    conn = get_md_connection()
+    if not conn:
+        return pd.DataFrame()
+
+    try:
+        target_accounts = [
+            '지급여력금액(경과조치 적용 전)',
+            '지급여력기준금액(경과조치 적용 전)',
+            '지급여력금액(경과조치 적용 후)',
+            '지급여력기준금액(경과조치 적용 후)'
+        ]
+
+        all_accounts = conn.execute(f"SELECT DISTINCT 계정명 FROM {TABLE_NAME}").df()['계정명'].tolist()
+
+        def find_best_match(target, candidates):
+            target_clean = target.replace(" ", "")
+            for c in candidates:
+                if c.replace(" ", "") == target_clean:
+                    return c
+            for c in candidates:
+                if target_clean in c.replace(" ", "") or c.replace(" ", "") in target_clean:
+                    return c
+            return target
+
+        actual_targets = [find_best_match(t, all_accounts) for t in target_accounts]
+        placeholders = ', '.join(['?' for _ in actual_targets])
+        query = f"SELECT * FROM {TABLE_NAME} WHERE 계정명 IN ({placeholders})"
+        df = conn.execute(query, actual_targets).df()
+        conn.close()
+
+        if df.empty:
+            return pd.DataFrame()
+
+        df['기준년월'] = df['기준년월'].astype(str).str.strip()
+        name_map = dict(zip(actual_targets, target_accounts))
+        df['계정명'] = df['계정명'].map(name_map)
+
+        pdf = df.pivot_table(
+            index=['기준년월', '회사명'],
+            columns='계정명',
+            values='값',
+            aggfunc='sum'
+        ).reset_index()
+
+        for col in target_accounts:
+            if col not in pdf.columns:
+                pdf[col] = 0
+
+        pdf['ratio_before'] = (pdf['지급여력금액(경과조치 적용 전)'] /
+                               pdf['지급여력기준금액(경과조치 적용 전)'].replace(0, pd.NA)) * 100
+        pdf['ratio_after'] = (pdf['지급여력금액(경과조치 적용 후)'] /
+                              pdf['지급여력기준금액(경과조치 적용 후)'].replace(0, pd.NA)) * 100
+        pdf = pdf.sort_values(['회사명', '기준년월'])
+        return pdf[['기준년월', '회사명', 'ratio_before', 'ratio_after']]
+    except Exception as e:
+        st.error(f"회사별 시계열 데이터 로드 실패: {e}")
         return pd.DataFrame()
 
 def fetch_ecos_bond_yield(start_month, end_month):
@@ -951,6 +1011,7 @@ if selected_tab == "📈 분석 대시보드 (Dashboard)":
     st.info("MotherDuck에 저장된 모든 과거 데이터를 기반으로 시계열 분석을 수행합니다.")
     
     analysis_df = load_kics_analysis_data()
+    company_ts_df = load_company_kics_timeseries()
     
     if not analysis_df.empty:
         # ECharts용 데이터 준비
@@ -965,100 +1026,191 @@ if selected_tab == "📈 분석 대시보드 (Dashboard)":
         if not bond_df.empty:
             kics_months = analysis_df['기준년월'].unique()
             bond_df = bond_df[bond_df['기준년월'].isin(kics_months)].sort_values('기준년월')
-        
-        # pyecharts Line 객체 생성
-        line = Line(init_opts=opts.InitOpts(width="100%", height="600px", theme="white", renderer="svg"))
-        line.add_xaxis(xaxis_data=x_data)
-        
-        # 색상 매핑
-        colors = {
-            '생명보험': '#1f77b4',
-            '손해보험': '#ff7f0e',
-            '전체': '#2ca02c'
-        }
-        
-        for g in ['생명보험', '손해보험', '전체']:
-            # x축 순서에 맞춰 정렬 및 누락값 처리
-            g_df = analysis_df[analysis_df['구분'] == g].set_index('기준년월').reindex(x_data).reset_index()
-            
-            # 경과조치 후 (실선)
-            line.add_yaxis(
-                series_name=f"{g} (경과조치 후)",
-                y_axis=[round(float(v), 2) if pd.notnull(v) else None for v in g_df['ratio_after']],
-                symbol="circle",
-                symbol_size=10,
-                linestyle_opts=opts.LineStyleOpts(width=4, color=colors[g]),
-                itemstyle_opts=opts.ItemStyleOpts(color=colors[g]),
-                label_opts=opts.LabelOpts(is_show=False),
-                is_smooth=False,
+
+        left_col, right_col = st.columns(2)
+
+        with left_col:
+            # pyecharts Line 객체 생성
+            line = Line(init_opts=opts.InitOpts(width="100%", height="600px", theme="white", renderer="svg"))
+            line.add_xaxis(xaxis_data=x_data)
+
+            # 색상 매핑
+            colors = {
+                '생명보험': '#1f77b4',
+                '손해보험': '#ff7f0e',
+                '전체': '#2ca02c'
+            }
+
+            for g in ['생명보험', '손해보험', '전체']:
+                # x축 순서에 맞춰 정렬 및 누락값 처리
+                g_df = analysis_df[analysis_df['구분'] == g].set_index('기준년월').reindex(x_data).reset_index()
+
+                # 경과조치 후 (실선)
+                line.add_yaxis(
+                    series_name=f"{g} (경과조치 후)",
+                    y_axis=[round(float(v), 2) if pd.notnull(v) else None for v in g_df['ratio_after']],
+                    symbol="circle",
+                    symbol_size=10,
+                    linestyle_opts=opts.LineStyleOpts(width=4, color=colors[g]),
+                    itemstyle_opts=opts.ItemStyleOpts(color=colors[g]),
+                    label_opts=opts.LabelOpts(is_show=False),
+                    is_smooth=False,
+                )
+
+                # 경과조치 전 (점선, 초기 비활성화)
+                line.add_yaxis(
+                    series_name=f"{g} (경과조치 전)",
+                    y_axis=[round(float(v), 2) if pd.notnull(v) else None for v in g_df['ratio_before']],
+                    symbol="circle",
+                    symbol_size=8,
+                    linestyle_opts=opts.LineStyleOpts(width=2, type_="dashed", color=colors[g]),
+                    itemstyle_opts=opts.ItemStyleOpts(color=colors[g]),
+                    label_opts=opts.LabelOpts(is_show=False),
+                    is_smooth=False,
+                )
+
+            # 보조축 추가 (금리용)
+            line.extend_axis(
+                yaxis=opts.AxisOpts(
+                    name="금리 (%)",
+                    type_="value",
+                    position="right",
+                    is_scale=True,
+                    axislabel_opts=opts.LabelOpts(formatter="{value}%"),
+                    splitline_opts=opts.SplitLineOpts(is_show=False),
+                )
             )
-            
-            # 경과조치 전 (점선, 초기 비활성화)
-            line.add_yaxis(
-                series_name=f"{g} (경과조치 전)",
-                y_axis=[round(float(v), 2) if pd.notnull(v) else None for v in g_df['ratio_before']],
-                symbol="circle",
-                                symbol_size=8,
-                linestyle_opts=opts.LineStyleOpts(width=2, type_="dashed", color=colors[g]),
-                itemstyle_opts=opts.ItemStyleOpts(color=colors[g]),
-                label_opts=opts.LabelOpts(is_show=False),
-                is_smooth=False,
+
+            if not bond_df.empty:
+                b_df = bond_df.set_index('기준년월').reindex(x_data).reset_index()
+                line.add_yaxis(
+                    series_name="국고채 10년 (우축)",
+                    y_axis=[round(float(v), 3) if pd.notnull(v) else None for v in b_df['yield']],
+                    yaxis_index=1,
+                    symbol="diamond",
+                    symbol_size=12,
+                    linestyle_opts=opts.LineStyleOpts(width=2, type_="dashed", color="#6e7074"),
+                    itemstyle_opts=opts.ItemStyleOpts(color="#6e7074"),
+                    label_opts=opts.LabelOpts(is_show=False),
+                )
+
+            # 초기 비활성화할 시리즈 맵 생성
+            selected_map = {f"{g} (경과조치 전)": False for g in ['생명보험', '손해보험', '전체']}
+
+            line.set_global_opts(
+                title_opts=opts.TitleOpts(title="보험업권별 K-ICS 비율 및 국고채 10년 금리 추이", subtitle="기준년월별 현황"),
+                tooltip_opts=opts.TooltipOpts(trigger="axis", axis_pointer_type="cross"),
+                xaxis_opts=opts.AxisOpts(name="기준년월", type_="category", boundary_gap=True),
+                yaxis_opts=opts.AxisOpts(
+                    name="K-ICS 비율 (%)",
+                    is_scale=True,
+                    axislabel_opts=opts.LabelOpts(formatter="{value}%"),
+                    splitline_opts=opts.SplitLineOpts(is_show=True),
+                ),
+                legend_opts=opts.LegendOpts(
+                    pos_right="5%",
+                    pos_top="5%",
+                    orient="vertical",
+                    selected_map=selected_map,
+                    background_color="rgba(255,255,255,0.7)",
+                    border_color="#ccc"
+                ),
+                datazoom_opts=[
+                    opts.DataZoomOpts(range_start=0, range_end=100),
+                    opts.DataZoomOpts(type_="inside", range_start=0, range_end=100)
+                ],
+                toolbox_opts=opts.ToolboxOpts(is_show=True),
             )
-            
-        # 보조축 추가 (금리용)
-        line.extend_axis(
-            yaxis=opts.AxisOpts(
-                name="금리 (%)",
-                type_="value",
-                position="right",
-                is_scale=True, # 데이터 범위에 맞춰 유동적 조정
-                axislabel_opts=opts.LabelOpts(formatter="{value}%"),
-                splitline_opts=opts.SplitLineOpts(is_show=False),
-            )
-        )
-        
-        if not bond_df.empty:
-            b_df = bond_df.set_index('기준년월').reindex(x_data).reset_index()
-            line.add_yaxis(
-                series_name="국고채 10년 (우축)",
-                y_axis=[round(float(v), 3) if pd.notnull(v) else None for v in b_df['yield']],
-                yaxis_index=1,
-                symbol="diamond",
-                symbol_size=12,
-                linestyle_opts=opts.LineStyleOpts(width=2, type_="dashed", color="#6e7074"),
-                itemstyle_opts=opts.ItemStyleOpts(color="#6e7074"),
-                label_opts=opts.LabelOpts(is_show=False),
-            )
-            
-        # 초기 비활성화할 시리즈 맵 생성
-        selected_map = {f"{g} (경과조치 전)": False for g in ['생명보험', '손해보험', '전체']}
-        
-        line.set_global_opts(
-            title_opts=opts.TitleOpts(title="보험업권별 K-ICS 비율 및 국고채 10년 금리 추이", subtitle="기준년월별 현황"),
-            tooltip_opts=opts.TooltipOpts(trigger="axis", axis_pointer_type="cross"),
-            xaxis_opts=opts.AxisOpts(name="기준년월", type_="category", boundary_gap=True),
-            yaxis_opts=opts.AxisOpts(
-                name="K-ICS 비율 (%)",
-                is_scale=True, # 데이터 범위에 맞춰 유동적 조정
-                axislabel_opts=opts.LabelOpts(formatter="{value}%"),
-                splitline_opts=opts.SplitLineOpts(is_show=True),
-            ),
-            legend_opts=opts.LegendOpts(
-                pos_right="5%", 
-                pos_top="5%",
-                orient="vertical", # 차트 내부 가독성을 위해 세로 배치
-                selected_map=selected_map,
-                background_color="rgba(255,255,255,0.7)", # 약간의 배경 투명도
-                border_color="#ccc"
-            ),
-            datazoom_opts=[
-                opts.DataZoomOpts(range_start=0, range_end=100), 
-                opts.DataZoomOpts(type_="inside", range_start=0, range_end=100)
-            ],
-            toolbox_opts=opts.ToolboxOpts(is_show=True),
-        )
-        
-        st_pyecharts(line, height="600px", key="dashboard_line_chart", renderer="svg")
+
+            st_pyecharts(line, height="600px", key="dashboard_line_chart", renderer="svg")
+
+        with right_col:
+            if company_ts_df.empty:
+                st.warning("회사별 시계열 데이터가 없어 회사 차트를 표시할 수 없습니다.")
+            else:
+                available_companies = sorted(company_ts_df['회사명'].unique().tolist())
+                selected_company = st.selectbox(
+                    "🏢 회사 선택",
+                    options=available_companies,
+                    index=0,
+                    key="dashboard_company_selector"
+                )
+
+                company_line = Line(init_opts=opts.InitOpts(width="100%", height="600px", theme="white", renderer="svg"))
+                company_line.add_xaxis(xaxis_data=x_data)
+
+                c_df = company_ts_df[company_ts_df['회사명'] == selected_company].set_index('기준년월').reindex(x_data).reset_index()
+
+                company_line.add_yaxis(
+                    series_name="경과조치 후",
+                    y_axis=[round(float(v), 2) if pd.notnull(v) else None for v in c_df['ratio_after']],
+                    symbol="circle",
+                    symbol_size=10,
+                    linestyle_opts=opts.LineStyleOpts(width=4, color="#2a9d8f"),
+                    itemstyle_opts=opts.ItemStyleOpts(color="#2a9d8f"),
+                    label_opts=opts.LabelOpts(is_show=False),
+                    is_smooth=False,
+                )
+                company_line.add_yaxis(
+                    series_name="경과조치 전",
+                    y_axis=[round(float(v), 2) if pd.notnull(v) else None for v in c_df['ratio_before']],
+                    symbol="circle",
+                    symbol_size=8,
+                    linestyle_opts=opts.LineStyleOpts(width=2, type_="dashed", color="#264653"),
+                    itemstyle_opts=opts.ItemStyleOpts(color="#264653"),
+                    label_opts=opts.LabelOpts(is_show=False),
+                    is_smooth=False,
+                )
+
+                company_line.extend_axis(
+                    yaxis=opts.AxisOpts(
+                        name="금리 (%)",
+                        type_="value",
+                        position="right",
+                        is_scale=True,
+                        axislabel_opts=opts.LabelOpts(formatter="{value}%"),
+                        splitline_opts=opts.SplitLineOpts(is_show=False),
+                    )
+                )
+
+                if not bond_df.empty:
+                    b_df = bond_df.set_index('기준년월').reindex(x_data).reset_index()
+                    company_line.add_yaxis(
+                        series_name="국고채 10년 (우축)",
+                        y_axis=[round(float(v), 3) if pd.notnull(v) else None for v in b_df['yield']],
+                        yaxis_index=1,
+                        symbol="diamond",
+                        symbol_size=12,
+                        linestyle_opts=opts.LineStyleOpts(width=2, type_="dashed", color="#6e7074"),
+                        itemstyle_opts=opts.ItemStyleOpts(color="#6e7074"),
+                        label_opts=opts.LabelOpts(is_show=False),
+                    )
+
+                company_line.set_global_opts(
+                    title_opts=opts.TitleOpts(title=f"{selected_company} K-ICS 비율 및 국고채 10년 금리 추이", subtitle="기준년월별 현황"),
+                    tooltip_opts=opts.TooltipOpts(trigger="axis", axis_pointer_type="cross"),
+                    xaxis_opts=opts.AxisOpts(name="기준년월", type_="category", boundary_gap=True),
+                    yaxis_opts=opts.AxisOpts(
+                        name="K-ICS 비율 (%)",
+                        is_scale=True,
+                        axislabel_opts=opts.LabelOpts(formatter="{value}%"),
+                        splitline_opts=opts.SplitLineOpts(is_show=True),
+                    ),
+                    legend_opts=opts.LegendOpts(
+                        pos_right="5%",
+                        pos_top="5%",
+                        orient="vertical",
+                        background_color="rgba(255,255,255,0.7)",
+                        border_color="#ccc"
+                    ),
+                    datazoom_opts=[
+                        opts.DataZoomOpts(range_start=0, range_end=100),
+                        opts.DataZoomOpts(type_="inside", range_start=0, range_end=100)
+                    ],
+                    toolbox_opts=opts.ToolboxOpts(is_show=True),
+                )
+
+                st_pyecharts(company_line, height="600px", key="dashboard_company_line_chart", renderer="svg")
         
         with st.expander("📍 상세 수치 데이터 확인"):
             st.dataframe(analysis_df, width="stretch")
