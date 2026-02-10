@@ -1158,7 +1158,7 @@ if selected_tab == "📈 분석 대시보드 (Dashboard)":
                     y_axis=[round(float(v), 2) if pd.notnull(v) else None for v in c_df['ratio_before']],
                     symbol="circle",
                     symbol_size=8,
-                    linestyle_opts=opts.LineStyleOpts(width=2, type_="dashed", color="#264653"),
+                    linestyle_opts=opts.LineStyleOpts(width=2, color="#264653"),
                     itemstyle_opts=opts.ItemStyleOpts(color="#264653"),
                     label_opts=opts.LabelOpts(is_show=False),
                     is_smooth=False,
