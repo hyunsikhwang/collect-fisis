@@ -1132,10 +1132,10 @@ if selected_tab == "📈 분석 대시보드 (Dashboard)":
                 toolbox_opts=opts.ToolboxOpts(is_show=True),
             )
             line.options["grid"] = {
-                "left": "8%",
-                "right": "12%",
+                "left": "4%",
+                "right": "4%",
                 "top": 130,
-                "bottom": 85,
+                "bottom": 55,
                 "containLabel": True,
             }
 
@@ -1219,10 +1219,10 @@ if selected_tab == "📈 분석 대시보드 (Dashboard)":
                     toolbox_opts=opts.ToolboxOpts(is_show=True),
                 )
                 company_line.options["grid"] = {
-                    "left": "8%",
-                    "right": "12%",
+                    "left": "4%",
+                    "right": "4%",
                     "top": 130,
-                    "bottom": 85,
+                    "bottom": 55,
                     "containLabel": True,
                 }
 
