@@ -1267,7 +1267,7 @@ if selected_tab == "📈 Trend":
                 st.warning("MotherDuck 연결 실패 (토큰 확인 필요)")
 
 elif selected_tab == "📊 Snapshot":
-    st.subheader("📊 회사별 지급여력비율 현황")
+    st.subheader("📊 회사별 K-ICS 비율 현황")
     
     # 가용한 모든 기준년월 가져오기
     available_months = get_available_months()
