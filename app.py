@@ -1029,10 +1029,13 @@ if selected_tab == "📈 분석 대시보드 (Dashboard)":
 
         selected_company = None
         if not company_ts_df.empty:
-            available_companies = sorted([
-                c for c in company_ts_df['회사명'].unique().tolist()
-                if get_english_company_name(c).strip() != ""
-            ])
+            available_companies = sorted(
+                [
+                    c for c in company_ts_df['회사명'].unique().tolist()
+                    if get_english_company_name(c).strip() != ""
+                ],
+                key=lambda c: get_english_company_name(c)
+            )
             if not available_companies:
                 st.warning("영문 회사명 매핑이 있는 회사가 없어 회사 차트를 표시할 수 없습니다.")
             else:
