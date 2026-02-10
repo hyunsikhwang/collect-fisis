@@ -1041,7 +1041,7 @@ if selected_tab == "📈 분석 대시보드 (Dashboard)":
 
         with left_col:
             # pyecharts Line 객체 생성
-            line = Line(init_opts=opts.InitOpts(width="100%", height="450px", theme="white", renderer="svg"))
+            line = Line(init_opts=opts.InitOpts(width="100%", height="500px", theme="white", renderer="svg"))
             line.add_xaxis(xaxis_data=x_data)
 
             # 색상 매핑
@@ -1139,13 +1139,13 @@ if selected_tab == "📈 분석 대시보드 (Dashboard)":
                 "containLabel": True,
             }
 
-            st_pyecharts(line, height="450px", key="dashboard_line_chart", renderer="svg")
+            st_pyecharts(line, height="500px", key="dashboard_line_chart", renderer="svg")
 
         with right_col:
             if company_ts_df.empty:
                 st.warning("회사별 시계열 데이터가 없어 회사 차트를 표시할 수 없습니다.")
             else:
-                company_line = Line(init_opts=opts.InitOpts(width="100%", height="450px", theme="white", renderer="svg"))
+                company_line = Line(init_opts=opts.InitOpts(width="100%", height="500px", theme="white", renderer="svg"))
                 company_line.add_xaxis(xaxis_data=x_data)
 
                 c_df = company_ts_df[company_ts_df['회사명'] == selected_company].set_index('기준년월').reindex(x_data).reset_index()
@@ -1226,7 +1226,7 @@ if selected_tab == "📈 분석 대시보드 (Dashboard)":
                     "containLabel": True,
                 }
 
-                st_pyecharts(company_line, height="450px", key="dashboard_company_line_chart", renderer="svg")
+                st_pyecharts(company_line, height="500px", key="dashboard_company_line_chart", renderer="svg")
         
         with st.expander("📍 상세 수치 데이터 확인"):
             st.dataframe(analysis_df, width="stretch")
