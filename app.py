@@ -641,10 +641,11 @@ def render_company_change_chart(change_df, sector, delta_col, chart_title, key_s
     x_names = [str(name) if pd.notna(name) else "" for name in s_df['display_name'].tolist()]
     y_delta = [round(safe_float(v), 1) for v in s_df[delta_col]]
     chart_points = []
-    for value in y_delta:
+    for company_name, value in zip(x_names, y_delta):
         color = "#1a9850" if value > 0 else "#d73027" if value < 0 else "#7f8c8d"
         chart_points.append(
             opts.BarItem(
+                name=company_name,
                 value=value,
                 itemstyle_opts=opts.ItemStyleOpts(color=color),
             )
