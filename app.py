@@ -1,4 +1,4 @@
-﻿import streamlit as st
+import streamlit as st
 import streamlit_shadcn_ui as ui
 import aiohttp
 import asyncio
@@ -849,26 +849,46 @@ async def get_accounts(session, list_no):
             })
     return account_list
 
-async def fetch_statistics(session, semaphore, company, account, pbar, status_text):
+async def fetch_statistics(session, semaphore, company, account, pbar, status_text, show_debug=False):
     """통계정보 수집"""
     url = f"{BASE_URL}/statisticsInfoSearch.json"
+    # 12월의 경우 'Q' 뿐만 아니라 'Y'(연간)로 조회해야 할 수도 있음
+    current_term = TERM
+    if str(TARGET_MONTH).endswith("12"):
+        current_term = "Y" # 우선 연간으로 시도
+
     params = {
         "lang": "kr",
         "auth": API_KEY,
         "financeCd": company['financeCd'],
         "listNo": account['listNo'],
         "accountCd": account['accountCd'],
-        "term": TERM,
+        "term": current_term,
         "startBaseMm": TARGET_MONTH,
         "endBaseMm": TARGET_MONTH
     }
 
     async with semaphore:
-        data = await fetch_json(session, url, params)
-    
-    # 진행률 업데이트 (UI) - 너무 잦은 업데이트는 성능 저하를 유발하므로 주의
-    # 여기서는 간단히 로직만 수행하고 결과 반환
-
+        try:
+            async with session.get(url, params=params, timeout=15) as response:
+                if response.status == 200:
+                    text = await response.text()
+                    try:
+                        data = json.loads(text)
+                    except json.JSONDecodeError:
+                        if show_debug:
+                            st.error(f"DEBUG: {company['financeNm']} JSON 디코딩 실패 - {text[:100]}")
+                        return None
+                    if show_debug and "A" in str(account['accountCd']):
+                        st.write(f"DEBUG: {company['financeNm']} / {account['accountNm']} 응답 - {data}")
+                else:
+                    if show_debug:
+                        st.error(f"DEBUG: {company['financeNm']} API 오류 (Status: {response.status})")
+                    return None
+        except Exception as e:
+            if show_debug:
+                st.error(f"DEBUG: {company['financeNm']} 통신 오류: {e}")
+            return None
     if data and 'result' in data and 'list' in data['result']:
         result_list = data['result']['list']
         if result_list:
@@ -891,7 +911,7 @@ async def fetch_statistics(session, semaphore, company, account, pbar, status_te
 # ==========================================
 # 3. 메인 실행 로직 (Async Wrapper)
 # ==========================================
-async def run_async_collection():
+async def run_async_collection(show_debug_api=False):
     status_container = st.status("🚀 데이터 수집 및 캐시 확인 중...", expanded=True)
     
     try:
@@ -940,7 +960,7 @@ async def run_async_collection():
                         f_cd = str(comp['financeCd']).strip()
                         a_cd = str(acc['accountCd']).strip()
                         if (f_cd, a_cd) not in existing_keys:
-                            tasks.append(fetch_statistics(session, semaphore, comp, acc, None, None))
+                            tasks.append(fetch_statistics(session, semaphore, comp, acc, None, None, show_debug=show_debug_api))
 
             build_tasks(life_companies, life_accounts)
             build_tasks(non_life_companies, non_life_accounts)
@@ -1583,9 +1603,10 @@ elif selected_tab == "📡 Collector":
         with col2:
             TARGET_MONTH = st.text_input(
                 "수집 기준년월 (YYYYMM)", 
-                value="202509",
+                value="202512",
                 help="조회하고 싶은 년월을 입력하세요."
             )
+        show_debug_api = st.checkbox("🔍 API 통신 로그 확인 (상세)", value=True)
 
     st.markdown(f"""
     Open API를 사용하여 보험사의 지급여력비율 관련 데이터를 수집하고 MotherDuck에 저장합니다.
@@ -1598,7 +1619,7 @@ elif selected_tab == "📡 Collector":
             st.error("API Key를 입력해주세요. (사이드바에서 입력 가능)")
         else:
             # 비동기 함수 실행
-            raw_data = asyncio.run(run_async_collection())
+            raw_data = asyncio.run(run_async_collection(show_debug_api=show_debug_api))
 
             if raw_data:
                 df = pd.DataFrame(raw_data)
