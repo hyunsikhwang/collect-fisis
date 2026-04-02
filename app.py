@@ -849,69 +849,80 @@ async def get_accounts(session, list_no):
             })
     return account_list
 
-async def fetch_statistics(session, semaphore, company, account, pbar, status_text, show_debug=False):
-    """통계정보 수집"""
+async def fetch_statistics(session, semaphore, company, account, pbar, status_text, api_key, show_debug=False):
+    """통계정보 수집 (인증키 직접 전달 및 연간/분기 회복력 추가)"""
     url = f"{BASE_URL}/statisticsInfoSearch.json"
-    # 12월의 경우 'Q' 뿐만 아니라 'Y'(연간)로 조회해야 할 수도 있음
-    current_term = TERM
+    
+    # 순차적으로 시도할 용어(Term) 리스트
+    # 12월의 경우 'Q'와 'Y' 모두 가능성이 있으나, 하나가 실패하면 다른 하나를 시도하도록 함
+    terms_to_try = [TERM]
     if str(TARGET_MONTH).endswith("12"):
-        current_term = "Y" # 우선 연간으로 시도
-
-    params = {
-        "lang": "kr",
-        "auth": API_KEY,
-        "financeCd": company['financeCd'],
-        "listNo": account['listNo'],
-        "accountCd": account['accountCd'],
-        "term": current_term,
-        "startBaseMm": TARGET_MONTH,
-        "endBaseMm": TARGET_MONTH
-    }
+        # 12월은 Q(4분기)와 Y(연말결산) 둘 다 시도 대상
+        terms_to_try = ["Q", "Y"]
 
     async with semaphore:
-        try:
-            async with session.get(url, params=params, timeout=15) as response:
-                if response.status == 200:
-                    text = await response.text()
-                    try:
-                        data = json.loads(text)
-                    except json.JSONDecodeError:
-                        if show_debug:
-                            st.error(f"DEBUG: {company['financeNm']} JSON 디코딩 실패 - {text[:100]}")
-                        return None
-                    if show_debug and "A" in str(account['accountCd']):
-                        st.write(f"DEBUG: {company['financeNm']} / {account['accountNm']} 응답 - {data}")
-                else:
-                    if show_debug:
-                        st.error(f"DEBUG: {company['financeNm']} API 오류 (Status: {response.status})")
-                    return None
-        except Exception as e:
-            if show_debug:
-                st.error(f"DEBUG: {company['financeNm']} 통신 오류: {e}")
-            return None
-    if data and 'result' in data and 'list' in data['result']:
-        result_list = data['result']['list']
-        if result_list:
-            item = result_list[0]
-            # 값 우선순위 확인
-            raw_value = item.get('a') or item.get('won') or item.get('column_value') or 0
-
-            return {
-                '구분': '생명보험' if company['partDiv'] == 'H' else '손해보험',
-                '회사코드': company['financeCd'],
-                '회사명': company['financeNm'],
-                '계정코드': account['accountCd'],
-                '계정명': account['accountNm'],
-                '기준년월': TARGET_MONTH, # API 결과와 상관없이 요청한 기준년월로 저장 (일관성 유지)
-                '단위': item.get('unit_name', ''),
-                '값': raw_value
+        for current_term in terms_to_try:
+            params = {
+                "lang": "kr",
+                "auth": api_key,
+                "financeCd": company['financeCd'],
+                "listNo": account['listNo'],
+                "accountCd": account['accountCd'],
+                "term": current_term,
+                "startBaseMm": TARGET_MONTH,
+                "endBaseMm": TARGET_MONTH
             }
+
+            try:
+                async with session.get(url, params=params, timeout=15) as response:
+                    if response.status == 200:
+                        text = await response.text()
+                        try:
+                            data = json.loads(text)
+                            result_list = data.get('result', {}).get('list', [])
+                            
+                            if result_list:
+                                if show_debug and "A" in str(account['accountCd']):
+                                    st.write(f"DEBUG: {company['financeNm']} / {account['accountNm']} ({current_term}) 성공 - {len(result_list)}건")
+                                
+                                item = result_list[0]
+                                # K-ICS 비율값은 'a' 컬럼에 담겨오는 경우가 많음 (확인됨)
+                                raw_value = item.get('a') or item.get('won') or item.get('column_value') or 0
+                                
+                                return {
+                                    '구분': '생명보험' if company['partDiv'] == 'H' else '손해보험',
+                                    '회사코드': company['financeCd'],
+                                    '회사명': company['financeNm'],
+                                    '계정코드': account['accountCd'],
+                                    '계정명': account['accountNm'],
+                                    '기준년월': TARGET_MONTH,
+                                    '단위': item.get('unit_name', ''),
+                                    '값': raw_value
+                                }
+                            else:
+                                if show_debug:
+                                    res_code = data.get('result', {}).get('resultCode')
+                                    res_msg = data.get('result', {}).get('resultMsg')
+                                    st.warning(f"DEBUG: {company['financeNm']} {current_term} 결과 없음 ({res_code}: {res_msg})")
+                                # 결과가 없으면 다음 term으로 시도 (for loop 진행)
+                                continue
+                        except json.JSONDecodeError:
+                            if show_debug:
+                                st.error(f"DEBUG: {company['financeNm']} JSON 디코딩 실패")
+                    else:
+                        if show_debug:
+                            st.error(f"DEBUG: {company['financeNm']} API 오류 (Status: {response.status})")
+            except Exception as e:
+                if show_debug:
+                    st.error(f"DEBUG: {company['financeNm']} 통신 오류: {e}")
+                break # 통신 오류 시 재시도 무의미할 수 있음
+                
     return None
 
 # ==========================================
 # 3. 메인 실행 로직 (Async Wrapper)
 # ==========================================
-async def run_async_collection(show_debug_api=False):
+async def run_async_collection(api_key, show_debug_api=False):
     status_container = st.status("🚀 데이터 수집 및 캐시 확인 중...", expanded=True)
     
     try:
@@ -960,7 +971,7 @@ async def run_async_collection(show_debug_api=False):
                         f_cd = str(comp['financeCd']).strip()
                         a_cd = str(acc['accountCd']).strip()
                         if (f_cd, a_cd) not in existing_keys:
-                            tasks.append(fetch_statistics(session, semaphore, comp, acc, None, None, show_debug=show_debug_api))
+                            tasks.append(fetch_statistics(session, semaphore, comp, acc, None, None, api_key, show_debug=show_debug_api))
 
             build_tasks(life_companies, life_accounts)
             build_tasks(non_life_companies, non_life_accounts)
@@ -1619,7 +1630,7 @@ elif selected_tab == "📡 Collector":
             st.error("API Key를 입력해주세요. (사이드바에서 입력 가능)")
         else:
             # 비동기 함수 실행
-            raw_data = asyncio.run(run_async_collection(show_debug_api=show_debug_api))
+            raw_data = asyncio.run(run_async_collection(API_KEY, show_debug_api=show_debug_api))
 
             if raw_data:
                 df = pd.DataFrame(raw_data)
