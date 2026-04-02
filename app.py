@@ -8,6 +8,7 @@ import json
 import time
 import duckdb
 import os
+import math
 import requests
 from datetime import datetime
 from pytz import timezone
@@ -406,6 +407,14 @@ def get_english_company_name(name):
         return ""
     return CompKoEn.get(name, "")
 
+def safe_float(value, default=0.0):
+    """JSON/차트 직렬화에 안전한 유한 실수만 반환."""
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return default
+    return numeric if math.isfinite(numeric) else default
+
 def render_sector_chart(sector, filtered_df, company_df, color_sets, weighted_avg):
     """특정 업권의 누적 바 차트 및 평균선을 렌더링"""
     import pandas as pd
@@ -429,8 +438,8 @@ def render_sector_chart(sector, filtered_df, company_df, color_sets, weighted_av
     total_ratios = [] # 레이블 표시용 (D)
     
     for _, row in s_df.iterrows():
-        a_val = float(row['A'])
-        d_val = float(row['final_ratio'])
+        a_val = safe_float(row['A'])
+        d_val = safe_float(row['final_ratio'])
         
         if row['is_fallback']:
             base_ratios.append(int(round(a_val, 0)))
@@ -440,6 +449,9 @@ def render_sector_chart(sector, filtered_df, company_df, color_sets, weighted_av
             effect_ratios.append(max(0, int(round(d_val - a_val, 0))))
         
         total_ratios.append(int(round(d_val, 0)))
+
+    safe_weighted_avg = round(safe_float(weighted_avg), 2)
+    total_ratios_json = json.dumps(total_ratios, ensure_ascii=False, allow_nan=False)
 
     bar = Bar(init_opts=opts.InitOpts(width="100%", height="500px", theme="white", renderer="svg"))
     bar.add_xaxis(xaxis_data=s_df['short_display_name'].tolist())
@@ -462,14 +474,14 @@ def render_sector_chart(sector, filtered_df, company_df, color_sets, weighted_av
             is_show=True, 
             position="top", 
             formatter=JsCode("""function(params) {
-                var total_ratios = """ + str(total_ratios) + """;
+                var total_ratios = """ + total_ratios_json + """;
                 return total_ratios[params.dataIndex] + '%';
             }""")
         ),
         itemstyle_opts=opts.ItemStyleOpts(color=color_sets[sector][1]),
         markline_opts=opts.MarkLineOpts(
-            data=[{"yAxis": round(weighted_avg, 2), "name": f"업권 평균 ({round(weighted_avg, 1)}%)"}],
-            label_opts=opts.LabelOpts(formatter=f"{sector} 평균: {round(weighted_avg, 1)}%", position="insideEndTop"),
+            data=[{"yAxis": safe_weighted_avg, "name": f"업권 평균 ({round(safe_weighted_avg, 1)}%)"}],
+            label_opts=opts.LabelOpts(formatter=f"{sector} 평균: {round(safe_weighted_avg, 1)}%", position="insideEndTop"),
             linestyle_opts=opts.LineStyleOpts(type_="dashed", width=1, color="#D10000")
         )
     )
@@ -550,20 +562,27 @@ def load_company_solvency_data(target_month):
 
         # 4. 개별 회사 Fallback 로직 및 유효 금액 계산
         def process_row(row):
+            a_val = safe_float(row['A'])
+            b_val = safe_float(row['B'])
+            c_val = safe_float(row['C'])
+            d_val = safe_float(row['D'])
+            e_val = safe_float(row['E'])
+            f_val = safe_float(row['F'])
+
             # A, D 기반 최종 비율 (단순 표시용)
             # D가 유효하고 A와 다른 경우에만 '경과후' 사용
-            if row['D'] > 0 and row['D'] != row['A']:
-                final_r = row['D']
+            if d_val > 0 and d_val != a_val:
+                final_r = d_val
                 is_fb = False
             else:
-                final_r = row['A']
+                final_r = a_val
                 is_fb = True
             
             # 가중 평균용 유효 금액 계산
             # 분자(지급여력금액): E > 0 ? E : B
-            eff_num = row['E'] if row['E'] > 0 else row['B']
+            eff_num = e_val if e_val > 0 else b_val
             # 분모(기준금액): F > 0 ? F : C
-            eff_den = row['F'] if row['F'] > 0 else row['C']
+            eff_den = f_val if f_val > 0 else c_val
             
             return pd.Series([final_r, is_fb, eff_num, eff_den])
 
