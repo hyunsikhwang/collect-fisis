@@ -9,7 +9,6 @@ import time
 import duckdb
 import os
 import math
-import plotly.graph_objects as go
 import requests
 from datetime import datetime
 from pytz import timezone
@@ -621,6 +620,9 @@ def build_company_change_df(current_df, previous_df):
 
 def render_company_change_chart(change_df, sector, delta_col, chart_title, key_suffix):
     """Render a diverging horizontal bar chart for company-level deltas."""
+    from pyecharts import options as opts
+    from pyecharts.charts import Bar
+
     s_df = change_df[change_df['sector'] == sector].copy()
     if s_df.empty:
         st.info(f"No data in {sector} sector.")
@@ -638,51 +640,52 @@ def render_company_change_chart(change_df, sector, delta_col, chart_title, key_s
 
     x_names = [str(name) if pd.notna(name) else "" for name in s_df['display_name'].tolist()]
     y_delta = [round(safe_float(v), 1) for v in s_df[delta_col]]
-    prev_col = "ratio_before_previous" if delta_col == "delta_before" else "ratio_after_previous"
-    curr_col = "ratio_before_current" if delta_col == "delta_before" else "ratio_after_current"
-    y_prev = [round(safe_float(v), 2) for v in s_df[prev_col]]
-    y_curr = [round(safe_float(v), 2) for v in s_df[curr_col]]
-    colors = ["#1a9850" if v > 0 else "#d73027" if v < 0 else "#7f8c8d" for v in y_delta]
-    text_values = [f"{v:+.1f}%p" if v != 0 else "0.0%p" for v in y_delta]
+    chart_points = []
+    for value in y_delta:
+        color = "#1a9850" if value > 0 else "#d73027" if value < 0 else "#7f8c8d"
+        chart_points.append(
+            opts.BarItem(
+                value=value,
+                itemstyle_opts=opts.ItemStyleOpts(color=color),
+            )
+        )
+
     max_abs_delta = max((abs(v) for v in y_delta), default=1.0)
     axis_limit = round(max_abs_delta * 1.12 + 1.0, 2)
 
-    fig = go.Figure()
-    fig.add_trace(
-        go.Bar(
-            x=y_delta,
-            y=x_names,
-            orientation="h",
-            marker=dict(color=colors),
-            text=text_values,
-            textposition="outside",
-            customdata=list(zip(y_prev, y_curr)),
-            hovertemplate=(
-                "%{y}<br>"
-                "Previous: %{customdata[0]:.2f}%<br>"
-                "Latest: %{customdata[1]:.2f}%<br>"
-                "<b>Delta: %{x:+.1f}%p</b>"
-                "<extra></extra>"
-            ),
-        )
+    bar = Bar(init_opts=opts.InitOpts(width="100%", height="520px", theme="white", renderer="svg"))
+    bar.add_xaxis(xaxis_data=x_names)
+    bar.add_yaxis(
+        series_name="Delta (latest-previous, %p)",
+        y_axis=chart_points,
+        label_opts=opts.LabelOpts(
+            is_show=True,
+            position="right",
+            formatter="{c}%p",
+        ),
     )
-    fig.add_vline(x=0, line_width=1, line_dash="dash", line_color="#666666")
-    fig.update_layout(
-        title=dict(text=chart_title, x=0.0),
-        height=520,
-        margin=dict(l=20, r=20, t=56, b=24),
-        paper_bgcolor="white",
-        plot_bgcolor="white",
-        showlegend=False,
+    bar.reversal_axis()
+    bar.set_global_opts(
+        title_opts=opts.TitleOpts(title=chart_title, pos_top="8px"),
+        legend_opts=opts.LegendOpts(is_show=False),
+        xaxis_opts=opts.AxisOpts(
+            name="Delta (%p)",
+            min_=-axis_limit,
+            max_=axis_limit,
+            axislabel_opts=opts.LabelOpts(formatter="{value}%p"),
+        ),
+        yaxis_opts=opts.AxisOpts(axislabel_opts=opts.LabelOpts(font_size=11)),
+        tooltip_opts=opts.TooltipOpts(trigger="item"),
     )
-    fig.update_xaxes(
-        title_text="Delta (%p)",
-        range=[-axis_limit, axis_limit],
-        zeroline=False,
-        ticksuffix="%"
-    )
-    fig.update_yaxes(autorange="reversed")
-    st.plotly_chart(fig, use_container_width=True, key=f"company_change_{key_suffix}_{sector}")
+    bar.options["grid"] = {
+        "left": "34%",
+        "right": "8%",
+        "top": 72,
+        "bottom": 28,
+        "containLabel": False,
+    }
+    bar.set_series_opts(markline_opts=opts.MarkLineOpts(data=[opts.MarkLineItem(x=0)]))
+    st_pyecharts(bar, height="520px", key=f"company_change_{key_suffix}_{sector}", renderer="svg")
 
 
 def reclassify_company_sector(sector, company_name):
