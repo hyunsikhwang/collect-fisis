@@ -420,7 +420,6 @@ def render_sector_chart(sector, filtered_df, company_df, color_sets, weighted_av
     import pandas as pd
     from pyecharts import options as opts
     from pyecharts.charts import Bar
-    from pyecharts.commons.utils import JsCode
     from streamlit_echarts import st_pyecharts
 
     st.write(f"### {sector}")
@@ -451,10 +450,10 @@ def render_sector_chart(sector, filtered_df, company_df, color_sets, weighted_av
         total_ratios.append(int(round(d_val, 0)))
 
     safe_weighted_avg = round(safe_float(weighted_avg), 2)
-    total_ratios_json = json.dumps(total_ratios, ensure_ascii=False, allow_nan=False)
+    xaxis_labels = [str(name) if pd.notna(name) else "" for name in s_df['short_display_name'].tolist()]
 
     bar = Bar(init_opts=opts.InitOpts(width="100%", height="500px", theme="white", renderer="svg"))
-    bar.add_xaxis(xaxis_data=s_df['short_display_name'].tolist())
+    bar.add_xaxis(xaxis_data=xaxis_labels)
     
     # 1. 하단 바: 경과조치 전
     bar.add_yaxis(
@@ -470,17 +469,10 @@ def render_sector_chart(sector, filtered_df, company_df, color_sets, weighted_av
         series_name="경과조치 효과",
         y_axis=effect_ratios,
         stack="stack1",
-        label_opts=opts.LabelOpts(
-            is_show=True, 
-            position="top", 
-            formatter=JsCode("""function(params) {
-                var total_ratios = """ + total_ratios_json + """;
-                return total_ratios[params.dataIndex] + '%';
-            }""")
-        ),
+        label_opts=opts.LabelOpts(is_show=False),
         itemstyle_opts=opts.ItemStyleOpts(color=color_sets[sector][1]),
         markline_opts=opts.MarkLineOpts(
-            data=[{"yAxis": safe_weighted_avg, "name": f"업권 평균 ({round(safe_weighted_avg, 1)}%)"}],
+            data=[opts.MarkLineItem(y=safe_weighted_avg, name=f"업권 평균 ({round(safe_weighted_avg, 1)}%)")],
             label_opts=opts.LabelOpts(formatter=f"{sector} 평균: {round(safe_weighted_avg, 1)}%", position="insideEndTop"),
             linestyle_opts=opts.LineStyleOpts(type_="dashed", width=1, color="#D10000")
         )
@@ -490,20 +482,7 @@ def render_sector_chart(sector, filtered_df, company_df, color_sets, weighted_av
         title_opts=opts.TitleOpts(title=f"{sector}사별 K-ICS 비율"),
         xaxis_opts=opts.AxisOpts(axislabel_opts=opts.LabelOpts(rotate=45, interval=0, font_size=11)),
         yaxis_opts=opts.AxisOpts(name="비율 (%)", axislabel_opts=opts.LabelOpts(formatter="{value}%")),
-        tooltip_opts=opts.TooltipOpts(
-            trigger="axis", 
-            axis_pointer_type="shadow",
-            formatter=JsCode("""function(params) {
-                var res = params[0].name + '<br/>';
-                var total = 0;
-                for(var i=0; i<params.length; i++) {
-                    res += params[i].marker + params[i].seriesName + ': ' + params[i].value + '%<br/>';
-                    total += params[i].value;
-                }
-                res += '<b>최종 비율 (경과후): ' + total + '%</b>';
-                return res;
-            }""")
-        ),
+        tooltip_opts=opts.TooltipOpts(trigger="axis", axis_pointer_type="shadow"),
     )
     
     st_pyecharts(bar, height="500px", key=f"bar_{sector}", renderer="svg")
