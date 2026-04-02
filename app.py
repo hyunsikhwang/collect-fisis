@@ -9,6 +9,7 @@ import time
 import duckdb
 import os
 import math
+import plotly.graph_objects as go
 import requests
 from datetime import datetime
 from pytz import timezone
@@ -635,131 +636,53 @@ def render_company_change_chart(change_df, sector, delta_col, chart_title, key_s
         st.info(f"No companies with English names in {sector} sector.")
         return
 
-    x_names = s_df['display_name'].tolist()
-    y_delta = [round(float(v), 1) for v in s_df[delta_col]]
+    x_names = [str(name) if pd.notna(name) else "" for name in s_df['display_name'].tolist()]
+    y_delta = [round(safe_float(v), 1) for v in s_df[delta_col]]
     prev_col = "ratio_before_previous" if delta_col == "delta_before" else "ratio_after_previous"
     curr_col = "ratio_before_current" if delta_col == "delta_before" else "ratio_after_current"
-    y_prev = [round(float(v), 2) for v in s_df[prev_col]]
-    y_curr = [round(float(v), 2) for v in s_df[curr_col]]
+    y_prev = [round(safe_float(v), 2) for v in s_df[prev_col]]
+    y_curr = [round(safe_float(v), 2) for v in s_df[curr_col]]
+    colors = ["#1a9850" if v > 0 else "#d73027" if v < 0 else "#7f8c8d" for v in y_delta]
+    text_values = [f"{v:+.1f}%p" if v != 0 else "0.0%p" for v in y_delta]
+    max_abs_delta = max((abs(v) for v in y_delta), default=1.0)
+    axis_limit = round(max_abs_delta * 1.12 + 1.0, 2)
 
-    # Axis-break-like compression for extreme outliers so smaller changes stay visible.
-    abs_delta = sorted([abs(v) for v in y_delta], reverse=True)
-    apply_axis_break = False
-    break_start = 0.0
-    break_scale = 0.35
-    if len(abs_delta) >= 2 and abs_delta[1] > 0:
-        ratio_gap = abs_delta[0] / abs_delta[1]
-        if ratio_gap >= 2.8 and abs_delta[0] >= 20:
-            apply_axis_break = True
-            break_start = round(max(8.0, abs_delta[1] * 1.15), 1)
-
-    def compress_delta(v):
-        if not apply_axis_break:
-            return round(v, 3)
-        sign = -1 if v < 0 else 1
-        av = abs(v)
-        if av <= break_start:
-            return round(v, 3)
-        return round(sign * (break_start + (av - break_start) * break_scale), 3)
-
-    chart_points = [{"value": compress_delta(v), "actual": v} for v in y_delta]
-    max_abs_for_axis = max(abs(compress_delta(v)) for v in y_delta) if y_delta else 1
-    axis_pad = max(2.0, max_abs_for_axis * 0.08)
-    axis_min = round(-(max_abs_for_axis + axis_pad), 2)
-    axis_max = round(max_abs_for_axis + axis_pad, 2)
-
-    bar = Bar(init_opts=opts.InitOpts(width="100%", height="520px", theme="white", renderer="svg"))
-    bar.add_xaxis(xaxis_data=x_names)
-    bar.add_yaxis(
-        series_name="Delta (latest-previous, %p)",
-        y_axis=chart_points,
-        label_opts=opts.LabelOpts(
-            is_show=True,
-            position="right",
-            formatter=JsCode(
-                "function(p){"
-                "var raw=(p.data && p.data.actual!==undefined)?p.data.actual:p.value;"
-                "return (raw > 0 ? '+' : '') + Number(raw).toFixed(1) + '%p';"
-                "}"
-            )
-        ),
-        itemstyle_opts=opts.ItemStyleOpts(
-            color=JsCode(
-                """
-            function(params){
-                var raw=(params.data && params.data.actual!==undefined)?params.data.actual:params.value;
-                if(raw > 0){return '#1a9850';}
-                if(raw < 0){return '#d73027';}
-                return '#7f8c8d';
-            }
-            """
-            )
+    fig = go.Figure()
+    fig.add_trace(
+        go.Bar(
+            x=y_delta,
+            y=x_names,
+            orientation="h",
+            marker=dict(color=colors),
+            text=text_values,
+            textposition="outside",
+            customdata=list(zip(y_prev, y_curr)),
+            hovertemplate=(
+                "%{y}<br>"
+                "Previous: %{customdata[0]:.2f}%<br>"
+                "Latest: %{customdata[1]:.2f}%<br>"
+                "<b>Delta: %{x:+.1f}%p</b>"
+                "<extra></extra>"
+            ),
         )
     )
-    bar.reversal_axis()
-    bar.set_global_opts(
-        title_opts=opts.TitleOpts(title=chart_title, pos_top="8px"),
-        legend_opts=opts.LegendOpts(pos_top="40px"),
-        xaxis_opts=opts.AxisOpts(
-            name="Delta (%p)",
-            min_=axis_min,
-            max_=axis_max,
-            axislabel_opts=opts.LabelOpts(
-                formatter=JsCode(
-                    "function(v){"
-                    f"var hasBreak={str(apply_axis_break).lower()};"
-                    f"var b={break_start};"
-                    f"var c={break_scale};"
-                    "if(!hasBreak){return Number(v).toFixed(1);}"
-                    "var s=v<0?-1:1; var a=Math.abs(v);"
-                    "if(a<=b){return Number(v).toFixed(1);}"
-                    "var restored=s*(b+((a-b)/c));"
-                    "return Number(restored).toFixed(1);"
-                    "}"
-                )
-            )
-        ),
-        yaxis_opts=opts.AxisOpts(axislabel_opts=opts.LabelOpts(font_size=11)),
-        tooltip_opts=opts.TooltipOpts(
-            trigger="item",
-            formatter=JsCode(
-                "function(p){"
-                f"var prev={json.dumps(y_prev)}; var curr={json.dumps(y_curr)};"
-                "var d=(p.data && p.data.actual!==undefined)?p.data.actual:p.value; var sign=d>0?'+':'';"
-                "return p.name + '<br/>Previous: ' + prev[p.dataIndex] + '%<br/>Latest: ' + curr[p.dataIndex] + '%<br/><b>Delta: ' + sign + Number(d).toFixed(1) + '%p</b>';"
-                "}"
-            )
-        ),
+    fig.add_vline(x=0, line_width=1, line_dash="dash", line_color="#666666")
+    fig.update_layout(
+        title=dict(text=chart_title, x=0.0),
+        height=520,
+        margin=dict(l=20, r=20, t=56, b=24),
+        paper_bgcolor="white",
+        plot_bgcolor="white",
+        showlegend=False,
     )
-    # Older pyecharts versions do not accept grid_opts in set_global_opts.
-    bar.options["grid"] = {
-        "left": "34%",
-        "right": "8%",
-        "top": 96,
-        "bottom": 28,
-        "containLabel": False,
-    }
-
-    compression_caption = None
-    if apply_axis_break:
-        bar.set_series_opts(
-            markline_opts=opts.MarkLineOpts(
-                data=[
-                    opts.MarkLineItem(x=0),
-                    opts.MarkLineItem(x=compress_delta(break_start)),
-                    opts.MarkLineItem(x=compress_delta(-break_start)),
-                ]
-            )
-        )
-        compression_caption = (
-            f"Axis compression applied: |delta| >= {break_start:.1f}%p is shown at {break_scale:.2f}x scale."
-        )
-    else:
-        bar.set_series_opts(markline_opts=opts.MarkLineOpts(data=[opts.MarkLineItem(x=0)]))
-
-    st_pyecharts(bar, height="520px", key=f"company_change_{key_suffix}_{sector}", renderer="svg")
-    if compression_caption:
-        st.caption(compression_caption)
+    fig.update_xaxes(
+        title_text="Delta (%p)",
+        range=[-axis_limit, axis_limit],
+        zeroline=False,
+        ticksuffix="%"
+    )
+    fig.update_yaxes(autorange="reversed")
+    st.plotly_chart(fig, use_container_width=True, key=f"company_change_{key_suffix}_{sector}")
 
 
 def reclassify_company_sector(sector, company_name):
