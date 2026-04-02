@@ -1,4 +1,4 @@
-import streamlit as st
+﻿import streamlit as st
 import streamlit_shadcn_ui as ui
 import aiohttp
 import asyncio
@@ -114,7 +114,8 @@ CompKoEn = {
     '제너럴재보험주식회사 서울지점': 'Gen Re',
     '코리안리재보험주식회사': 'Korean Re',
     '퍼시픽라이프리 인터내셔널 한국지점': 'Pacific Re',
-    '하노버재보험(주) 한국지점': 'Hanover Re'
+    '하노버재보험(주) 한국지점': 'Hanover Re',
+    '예별손해보험 주식회사': 'Yebyeol FM',
 }
 
 def get_md_connection():
