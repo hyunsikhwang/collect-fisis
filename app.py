@@ -41,18 +41,26 @@ nest_asyncio.apply()
 # ==========================================
 # 1. 상수 및 기본 설정
 # ==========================================
+def get_secret(key, default=""):
+    """Streamlit secrets 또는 환경 변수에서 값을 가져옴."""
+    try:
+        return st.secrets.get(key, os.environ.get(key, default))
+    except Exception:
+        return os.environ.get(key, default)
+
 # API 키 (st.secrets 처리 후 필요시 UI에서 입력)
-API_KEY = st.secrets.get("FSS_API_KEY", "")
+API_KEY = get_secret("FSS_API_KEY", "")
 TARGET_MONTH = "202509" # 기본값 설정
 
 TERM = "Q" # 분기
-BASE_URL = "http://fisis.fss.or.kr/openapi"
+BASE_URL = "https://fisis.fss.or.kr/openapi"
+USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 MAX_CONCURRENT_REQUESTS = 20
 
 # ==========================================
 # 1.5. MotherDuck DB 설정
 # ==========================================
-MD_TOKEN = st.secrets.get("MOTHERDUCK_TOKEN", "")
+MD_TOKEN = get_secret("MOTHERDUCK_TOKEN", "")
 DB_NAME = "fisis_cache"
 TABLE_NAME = "insurance_stats"
 COLUMNS = ['구분', '회사코드', '회사명', '계정코드', '계정명', '기준년월', '단위', '값']
@@ -803,25 +811,38 @@ REINSURANCE_COMPANIES = [
 # ==========================================
 # 2. 비동기 통신 함수 정의
 # ==========================================
-async def fetch_json(session, url, params):
+async def fetch_json(session, url, params, error_list=None):
     try:
-        async with session.get(url, params=params, timeout=10) as response:
+        async with session.get(url, params=params, timeout=15) as response:
             if response.status == 200:
                 text = await response.text()
                 try:
-                    return json.loads(text)
+                    data = json.loads(text)
+                    if data and 'result' in data and data['result'].get('err_cd') not in (None, '000'):
+                        if error_list is not None:
+                            error_list.append(
+                                f"API Error ({data['result'].get('err_cd')}): {data['result'].get('err_msg', 'Unknown API Error')} [URL: {url}]"
+                            )
+                        return None
+                    return data
                 except json.JSONDecodeError:
+                    if error_list is not None:
+                        error_list.append(f"JSON Decode Error: [URL: {url}]")
                     return None
             else:
+                if error_list is not None:
+                    error_list.append(f"HTTP Error {response.status}: [URL: {url}]")
                 return None
-    except Exception:
+    except Exception as e:
+        if error_list is not None:
+            error_list.append(f"Connection Exception: {str(e)} [URL: {url}]")
         return None
 
-async def get_companies(session, part_div):
+async def get_companies(session, part_div, api_key, error_list=None):
     """금융회사 코드 조회"""
     url = f"{BASE_URL}/companySearch.json"
-    params = {"lang": "kr", "auth": API_KEY, "partDiv": part_div}
-    data = await fetch_json(session, url, params)
+    params = {"lang": "kr", "auth": api_key, "partDiv": part_div}
+    data = await fetch_json(session, url, params, error_list)
 
     company_list = []
     if data and 'result' in data and 'list' in data['result']:
@@ -833,11 +854,11 @@ async def get_companies(session, part_div):
             })
     return company_list
 
-async def get_accounts(session, list_no):
+async def get_accounts(session, list_no, api_key, error_list=None):
     """계정항목 조회"""
     url = f"{BASE_URL}/accountListSearch.json"
-    params = {"lang": "kr", "auth": API_KEY, "listNo": list_no}
-    data = await fetch_json(session, url, params)
+    params = {"lang": "kr", "auth": api_key, "listNo": list_no}
+    data = await fetch_json(session, url, params, error_list)
 
     account_list = []
     if data and 'result' in data and 'list' in data['result']:
@@ -849,14 +870,14 @@ async def get_accounts(session, list_no):
             })
     return account_list
 
-async def fetch_statistics(session, semaphore, company, account, pbar, status_text, api_key, show_debug=False):
+async def fetch_statistics(session, semaphore, company, account, api_key, target_month, error_list=None, show_debug=False):
     """통계정보 수집 (인증키 직접 전달 및 연간/분기 회복력 추가)"""
     url = f"{BASE_URL}/statisticsInfoSearch.json"
     
     # 순차적으로 시도할 용어(Term) 리스트
     # 12월의 경우 'Q'와 'Y' 모두 가능성이 있으나, 하나가 실패하면 다른 하나를 시도하도록 함
     terms_to_try = [TERM]
-    if str(TARGET_MONTH).endswith("12"):
+    if str(target_month).endswith("12"):
         # 12월은 Q(4분기)와 Y(연말결산) 둘 다 시도 대상
         terms_to_try = ["Q", "Y"]
 
@@ -869,50 +890,38 @@ async def fetch_statistics(session, semaphore, company, account, pbar, status_te
                 "listNo": account['listNo'],
                 "accountCd": account['accountCd'],
                 "term": current_term,
-                "startBaseMm": TARGET_MONTH,
-                "endBaseMm": TARGET_MONTH
+                "startBaseMm": target_month,
+                "endBaseMm": target_month
             }
 
             try:
-                async with session.get(url, params=params, timeout=15) as response:
-                    if response.status == 200:
-                        text = await response.text()
-                        try:
-                            data = json.loads(text)
-                            result_list = data.get('result', {}).get('list', [])
-                            
-                            if result_list:
-                                if show_debug and "A" in str(account['accountCd']):
-                                    st.write(f"DEBUG: {company['financeNm']} / {account['accountNm']} ({current_term}) 성공 - {len(result_list)}건")
-                                
-                                item = result_list[0]
-                                # K-ICS 비율값은 'a' 컬럼에 담겨오는 경우가 많음 (확인됨)
-                                raw_value = item.get('a') or item.get('won') or item.get('column_value') or 0
-                                
-                                return {
-                                    '구분': '생명보험' if company['partDiv'] == 'H' else '손해보험',
-                                    '회사코드': company['financeCd'],
-                                    '회사명': company['financeNm'],
-                                    '계정코드': account['accountCd'],
-                                    '계정명': account['accountNm'],
-                                    '기준년월': TARGET_MONTH,
-                                    '단위': item.get('unit_name', ''),
-                                    '값': raw_value
-                                }
-                            else:
-                                if show_debug:
-                                    res_code = data.get('result', {}).get('resultCode')
-                                    res_msg = data.get('result', {}).get('resultMsg')
-                                    st.warning(f"DEBUG: {company['financeNm']} {current_term} 결과 없음 ({res_code}: {res_msg})")
-                                # 결과가 없으면 다음 term으로 시도 (for loop 진행)
-                                continue
-                        except json.JSONDecodeError:
-                            if show_debug:
-                                st.error(f"DEBUG: {company['financeNm']} JSON 디코딩 실패")
-                    else:
-                        if show_debug:
-                            st.error(f"DEBUG: {company['financeNm']} API 오류 (Status: {response.status})")
+                data = await fetch_json(session, url, params, error_list)
+                result_list = data.get('result', {}).get('list', []) if data else []
+                if result_list:
+                    if show_debug and "A" in str(account['accountCd']):
+                        st.write(f"DEBUG: {company['financeNm']} / {account['accountNm']} ({current_term}) 성공 - {len(result_list)}건")
+
+                    item = result_list[0]
+                    raw_value = item.get('a') or item.get('won') or item.get('column_value') or 0
+
+                    return {
+                        '구분': '생명보험' if company['partDiv'] == 'H' else '손해보험',
+                        '회사코드': company['financeCd'],
+                        '회사명': company['financeNm'],
+                        '계정코드': account['accountCd'],
+                        '계정명': account['accountNm'],
+                        '기준년월': target_month,
+                        '단위': item.get('unit_name', ''),
+                        '값': raw_value
+                    }
+
+                if show_debug:
+                    st.warning(f"DEBUG: {company['financeNm']} / {account['accountNm']} ({current_term}) 결과 없음")
             except Exception as e:
+                if error_list is not None:
+                    error_list.append(
+                        f"Statistics Exception: {company['financeNm']} / {account['accountNm']} / {current_term} / {str(e)}"
+                    )
                 if show_debug:
                     st.error(f"DEBUG: {company['financeNm']} 통신 오류: {e}")
                 break # 통신 오류 시 재시도 무의미할 수 있음
@@ -922,32 +931,40 @@ async def fetch_statistics(session, semaphore, company, account, pbar, status_te
 # ==========================================
 # 3. 메인 실행 로직 (Async Wrapper)
 # ==========================================
-async def run_async_collection(api_key, show_debug_api=False):
+async def run_async_collection(api_key, target_month, show_debug_api=False):
     status_container = st.status("🚀 데이터 수집 및 캐시 확인 중...", expanded=True)
+    error_log = []
     
     try:
         # 0. MotherDuck 캐시 확인
-        status_container.write(f"🔎 {TARGET_MONTH} 데이터 캐시 확인 중...")
-        cached_df = get_cached_data(TARGET_MONTH)
+        status_container.write(f"🔎 {target_month} 데이터 캐시 확인 중...")
+        cached_df = get_cached_data(target_month)
         
         if not cached_df.empty:
             status_container.write(f"✅ {len(cached_df)}건의 데이터를 MotherDuck에서 로드했습니다.")
         else:
             status_container.write("ℹ️ 해당 월의 캐시된 데이터가 없습니다.")
         
-        async with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession(headers={"User-Agent": USER_AGENT}) as session:
             # 1. 목록 조회
             status_container.write("🔍 1. 금융회사 및 계정항목 목록 조회 중...")
             
             # 병렬로 목록 가져오기
-            f1 = get_companies(session, 'H')
-            f2 = get_companies(session, 'I')
-            f3 = get_accounts(session, 'SH021')
-            f4 = get_accounts(session, 'SI021')
+            f1 = get_companies(session, 'H', api_key, error_log)
+            f2 = get_companies(session, 'I', api_key, error_log)
+            f3 = get_accounts(session, 'SH021', api_key, error_log)
+            f4 = get_accounts(session, 'SI021', api_key, error_log)
             
             life_companies, non_life_companies, life_accounts, non_life_accounts = await asyncio.gather(f1, f2, f3, f4)
             
             total_companies = len(life_companies) + len(non_life_companies)
+            if total_companies == 0:
+                status_container.write("❌ 회사 정보를 가져오지 못했습니다. API Key를 확인해 주세요.")
+                if error_log:
+                    with st.expander("에러 로그 상세"):
+                        for err in error_log:
+                            st.write(err)
+                return []
             status_container.write(f"✅ 회사 목록 확보: 총 {total_companies}개")
 
             # 2. 작업 생성 (캐시에 없는 것만)
@@ -971,7 +988,7 @@ async def run_async_collection(api_key, show_debug_api=False):
                         f_cd = str(comp['financeCd']).strip()
                         a_cd = str(acc['accountCd']).strip()
                         if (f_cd, a_cd) not in existing_keys:
-                            tasks.append(fetch_statistics(session, semaphore, comp, acc, None, None, api_key, show_debug=show_debug_api))
+                            tasks.append(fetch_statistics(session, semaphore, comp, acc, api_key, target_month, error_log, show_debug=show_debug_api))
 
             build_tasks(life_companies, life_accounts)
             build_tasks(non_life_companies, non_life_accounts)
@@ -1015,6 +1032,11 @@ async def run_async_collection(api_key, show_debug_api=False):
                 else:
                     results = new_results
             else:
+                if error_log:
+                    status_container.write("⚠️ 일부 요청에서 오류가 발생하여 신규 수집 데이터가 없습니다.")
+                    with st.expander("에러 로그 상세"):
+                        for err in error_log:
+                            st.write(err)
                 results = cached_df.to_dict('records')
 
             status_container.update(label="✅ 데이터 수집 및 캐싱 완료!", state="complete", expanded=False)
@@ -1630,7 +1652,7 @@ elif selected_tab == "📡 Collector":
             st.error("API Key를 입력해주세요. (사이드바에서 입력 가능)")
         else:
             # 비동기 함수 실행
-            raw_data = asyncio.run(run_async_collection(API_KEY, show_debug_api=show_debug_api))
+            raw_data = asyncio.run(run_async_collection(API_KEY, TARGET_MONTH, show_debug_api=show_debug_api))
 
             if raw_data:
                 df = pd.DataFrame(raw_data)
