@@ -31,21 +31,21 @@ def inject_design_system():
         @import url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/variable/pretendardvariable-dynamic-subset.css");
 
         :root {
-            --app-bg: #f7f8fa;
+            --app-bg: #f8f9fb;
             --surface: #ffffff;
-            --surface-soft: #fafbfc;
+            --surface-soft: #f3f5f7;
             --text: #111827;
-            --muted: #6b7280;
-            --subtle: #9ca3af;
-            --border: #e5e7eb;
-            --border-strong: #d1d5db;
-            --primary: #111827;
-            --accent: #0f766e;
+            --muted: #606976;
+            --subtle: #98a1ae;
+            --border: #e6e8ec;
+            --border-strong: #cfd5dd;
+            --primary: #101418;
+            --accent: #1d7f70;
             --warning-bg: #fff7e6;
             --warning-border: #ffd591;
             --danger-bg: #fff1f0;
             --danger-border: #ffa39e;
-            --shadow-sm: 0 1px 2px rgba(17, 24, 39, 0.04);
+            --shadow-sm: 0 1px 2px rgba(16, 20, 24, 0.04);
             --radius: 8px;
         }
 
@@ -70,8 +70,8 @@ def inject_design_system():
         }
 
         .stApp .block-container {
-            max-width: 1400px;
-            padding: 1rem 1.5rem 2.5rem;
+            max-width: 1360px;
+            padding: 0.8rem 1.35rem 2.5rem;
         }
 
         #MainMenu, footer, header[data-testid="stHeader"] {
@@ -93,9 +93,8 @@ def inject_design_system():
             align-items: center;
             justify-content: space-between;
             gap: 1rem;
-            padding: 0.35rem 0 0.9rem;
-            border-bottom: 1px solid var(--border);
-            margin-bottom: 1rem;
+            padding: 0.2rem 0 0.65rem;
+            margin-bottom: 0.65rem;
         }
 
         .app-brand {
@@ -119,13 +118,56 @@ def inject_design_system():
 
         .app-title {
             margin: 0;
-            font-size: 1.28rem;
+            font-size: 1.2rem;
             line-height: 1.2;
             font-weight: 750;
         }
 
+        .app-nav {
+            display: flex;
+            align-items: center;
+            gap: 0.16rem;
+            width: 100%;
+            margin: 0 0 1.2rem;
+            padding: 0.18rem;
+            overflow-x: auto;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            background: #eef1f4;
+            scrollbar-width: none;
+        }
+
+        .app-nav::-webkit-scrollbar {
+            display: none;
+        }
+
+        .app-nav a {
+            flex: 0 0 auto;
+            min-width: 108px;
+            padding: 0.52rem 0.86rem;
+            border-radius: 7px;
+            color: var(--muted);
+            text-decoration: none !important;
+            text-align: center;
+            font-size: 0.86rem;
+            line-height: 1;
+            font-weight: 680;
+            white-space: nowrap;
+        }
+
+        .app-nav a:hover {
+            color: var(--primary);
+            background: rgba(255, 255, 255, 0.58);
+        }
+
+        .app-nav a.active {
+            color: var(--primary);
+            background: var(--surface);
+            box-shadow: 0 1px 2px rgba(16, 20, 24, 0.07);
+        }
+
         .section-heading {
-            margin: 1.2rem 0 0.75rem;
+            margin: 0.95rem 0 0.68rem;
             padding: 0;
             background: transparent;
             border: 0;
@@ -134,7 +176,7 @@ def inject_design_system():
 
         .section-heading h2 {
             margin: 0;
-            font-size: 1.12rem;
+            font-size: 1.08rem;
             line-height: 1.25;
             font-weight: 740;
         }
@@ -145,6 +187,10 @@ def inject_design_system():
             border-radius: var(--radius) !important;
             background: var(--surface) !important;
             box-shadow: none;
+        }
+
+        div[data-testid="stVerticalBlockBorderWrapper"] {
+            padding: 0.85rem 0.95rem !important;
         }
 
         div[data-testid="stExpander"] summary {
@@ -278,7 +324,7 @@ def inject_design_system():
 
         @media (max-width: 760px) {
             .stApp .block-container {
-                padding: 0.75rem 1rem 2rem;
+                padding: 0.7rem 0.85rem 2rem;
             }
 
             .app-shell-header {
@@ -296,6 +342,16 @@ def inject_design_system():
                 min-height: 32px;
                 padding: 0 0.45rem;
                 font-size: 0.78rem !important;
+            }
+
+            .app-nav {
+                margin-bottom: 1rem;
+            }
+
+            .app-nav a {
+                min-width: auto;
+                padding: 0.5rem 0.64rem;
+                font-size: 0.8rem;
             }
         }
         </style>
@@ -324,6 +380,39 @@ def render_section_header(title):
         </div>
         """,
     )
+
+MAIN_NAV = [
+    {"id": "trend", "label": "Trend", "value": "Trend"},
+    {"id": "snapshot", "label": "Snapshot", "value": "Snapshot"},
+    {"id": "changes", "label": "Changes", "value": "Changes"},
+    {"id": "collector", "label": "Collector", "value": "Collector"},
+]
+
+def get_query_param(name, default):
+    """Read a single query parameter across Streamlit versions."""
+    try:
+        value = st.query_params.get(name, default)
+        return value[0] if isinstance(value, list) else value
+    except Exception:
+        value = st.experimental_get_query_params().get(name, [default])
+        return value[0] if isinstance(value, list) else value
+
+def render_main_nav():
+    """Render stable HTML navigation instead of a styled radio group."""
+    selected_id = str(get_query_param("view", "trend")).lower()
+    valid_ids = {item["id"] for item in MAIN_NAV}
+    if selected_id not in valid_ids:
+        selected_id = "trend"
+
+    links = []
+    for item in MAIN_NAV:
+        active_class = " active" if item["id"] == selected_id else ""
+        links.append(
+            f'<a class="app-nav-item{active_class}" href="?view={item["id"]}" target="_self">{item["label"]}</a>'
+        )
+
+    st.html(f'<nav class="app-nav">{"".join(links)}</nav>')
+    return next(item["value"] for item in MAIN_NAV if item["id"] == selected_id)
 
 inject_design_system()
 
@@ -362,12 +451,16 @@ TRANSITION_FALLBACK_ACCOUNT_CODES = {
     'C': 'F',
 }
 SECTOR_COLORS = {
-    '생명보험': '#1f5f8b',
-    '손해보험': '#c7792b',
-    '재보험': '#2d7d6f',
-    '전체': '#1f8f86',
+    '생명보험': '#2563eb',
+    '손해보험': '#d97706',
+    '재보험': '#059669',
+    '전체': '#0f766e',
 }
-CHART_NEUTRAL = '#667085'
+CHART_NEUTRAL = '#64748b'
+
+CHART_TITLE_STYLE = {"fontFamily": "Pretendard Variable, Pretendard, sans-serif", "fontSize": 14, "fontWeight": 700, "color": "#111827"}
+CHART_TEXT_STYLE = {"fontFamily": "Pretendard Variable, Pretendard, sans-serif", "fontSize": 11, "color": "#606976"}
+CHART_LABEL_KWARGS = {"font_family": "Pretendard Variable, Pretendard, sans-serif", "font_size": 11, "color": "#606976"}
 
 # 회사명 한/영 매핑 (표시용)
 CompKoEn = {
@@ -822,7 +915,7 @@ def render_sector_chart(sector, filtered_df, company_df, color_sets, weighted_av
     from pyecharts.charts import Bar
     from streamlit_echarts import st_pyecharts
 
-    st.write(f"### {sector}")
+    st.markdown(f"#### {sector}")
     
     # 해당 업권 데이터 필터링 및 정렬
     s_df = filtered_df[filtered_df['구분'] == sector].sort_values('final_ratio', ascending=False)
@@ -852,7 +945,7 @@ def render_sector_chart(sector, filtered_df, company_df, color_sets, weighted_av
     safe_weighted_avg = round(safe_float(weighted_avg), 2)
     xaxis_labels = [str(name) if pd.notna(name) else "" for name in s_df['short_display_name'].tolist()]
 
-    bar = Bar(init_opts=opts.InitOpts(width="100%", height="500px", theme="white", renderer="svg"))
+    bar = Bar(init_opts=opts.InitOpts(width="100%", height="480px", theme="white", renderer="svg"))
     bar.add_xaxis(xaxis_data=xaxis_labels)
     
     # 1. 하단 바: 경과조치 전
@@ -873,19 +966,30 @@ def render_sector_chart(sector, filtered_df, company_df, color_sets, weighted_av
         itemstyle_opts=opts.ItemStyleOpts(color=color_sets[sector][1]),
         markline_opts=opts.MarkLineOpts(
             data=[opts.MarkLineItem(y=safe_weighted_avg, name=f"업권 평균 ({round(safe_weighted_avg, 1)}%)")],
-            label_opts=opts.LabelOpts(formatter=f"{sector} 평균: {round(safe_weighted_avg, 1)}%", position="insideEndTop"),
-            linestyle_opts=opts.LineStyleOpts(type_="dashed", width=1, color="#D10000")
+            label_opts=opts.LabelOpts(formatter=f"{sector} 평균 {round(safe_weighted_avg, 1)}%", position="insideEndTop", font_size=11),
+            linestyle_opts=opts.LineStyleOpts(type_="dashed", width=1, color="#ef4444")
         )
     )
     
     bar.set_global_opts(
-        title_opts=opts.TitleOpts(title=f"{sector}사별 K-ICS 비율"),
-        xaxis_opts=opts.AxisOpts(axislabel_opts=opts.LabelOpts(rotate=45, interval=0, font_size=11)),
-        yaxis_opts=opts.AxisOpts(name="비율 (%)", axislabel_opts=opts.LabelOpts(formatter="{value}%")),
+        title_opts=opts.TitleOpts(
+            title=f"{sector}사별 K-ICS 비율",
+            title_textstyle_opts=CHART_TITLE_STYLE,
+        ),
+        xaxis_opts=opts.AxisOpts(axislabel_opts=opts.LabelOpts(rotate=45, interval=0, **CHART_LABEL_KWARGS)),
+        yaxis_opts=opts.AxisOpts(name="비율 (%)", axislabel_opts=opts.LabelOpts(formatter="{value}%", **CHART_LABEL_KWARGS)),
         tooltip_opts=opts.TooltipOpts(trigger="axis", axis_pointer_type="shadow"),
+        legend_opts=opts.LegendOpts(textstyle_opts=CHART_TEXT_STYLE),
     )
+    bar.options["grid"] = {
+        "left": "4%",
+        "right": "4%",
+        "top": 68,
+        "bottom": 90,
+        "containLabel": True,
+    }
     
-    st_pyecharts(bar, height="500px", key=f"bar_{sector}", renderer="svg")
+    st_pyecharts(bar, height="480px", key=f"bar_{sector}", renderer="svg")
 
 def get_available_months():
     """DB에 저장된 모든 기준년월 목록을 내림차순으로 반환"""
@@ -1054,7 +1158,7 @@ def render_company_change_chart(change_df, sector, delta_col, chart_title, key_s
     max_abs_delta = max((abs(v) for v in y_delta), default=1.0)
     axis_limit = round(max_abs_delta * 1.12 + 1.0, 2)
 
-    bar = Bar(init_opts=opts.InitOpts(width="100%", height="520px", theme="white", renderer="svg"))
+    bar = Bar(init_opts=opts.InitOpts(width="100%", height="480px", theme="white", renderer="svg"))
     bar.add_xaxis(xaxis_data=x_names)
     bar.add_yaxis(
         series_name="Delta (latest-previous, %p)",
@@ -1067,26 +1171,30 @@ def render_company_change_chart(change_df, sector, delta_col, chart_title, key_s
     )
     bar.reversal_axis()
     bar.set_global_opts(
-        title_opts=opts.TitleOpts(title=chart_title, pos_top="8px"),
+        title_opts=opts.TitleOpts(
+            title=chart_title,
+            pos_top="8px",
+            title_textstyle_opts=CHART_TITLE_STYLE,
+        ),
         legend_opts=opts.LegendOpts(is_show=False),
         xaxis_opts=opts.AxisOpts(
             name="Delta (%p)",
             min_=-axis_limit,
             max_=axis_limit,
-            axislabel_opts=opts.LabelOpts(formatter="{value}%p"),
+            axislabel_opts=opts.LabelOpts(formatter="{value}%p", **CHART_LABEL_KWARGS),
         ),
-        yaxis_opts=opts.AxisOpts(axislabel_opts=opts.LabelOpts(font_size=11)),
+        yaxis_opts=opts.AxisOpts(axislabel_opts=opts.LabelOpts(**CHART_LABEL_KWARGS)),
         tooltip_opts=opts.TooltipOpts(trigger="item"),
     )
     bar.options["grid"] = {
         "left": "34%",
         "right": "8%",
-        "top": 72,
+        "top": 62,
         "bottom": 28,
         "containLabel": False,
     }
     bar.set_series_opts(markline_opts=opts.MarkLineOpts(data=[opts.MarkLineItem(x=0)]))
-    st_pyecharts(bar, height="520px", key=f"company_change_{key_suffix}_{sector}", renderer="svg")
+    st_pyecharts(bar, height="480px", key=f"company_change_{key_suffix}_{sector}", renderer="svg")
 
 
 def reclassify_company_sector(sector, company_name):
@@ -1411,17 +1519,7 @@ async def run_async_collection(api_key, target_month, show_debug_api=False, over
 # 4. Streamlit UI 구성
 # ==========================================
 render_app_header()
-
-# 메인 탭 분리: 분석 대시보드, 회사별 현황, 데이터 수집기
-main_tabs = ["Trend", "Snapshot", "Changes", "Collector"]
-selected_tab = st.radio(
-    "메인 화면 선택",
-    options=main_tabs,
-    index=0,
-    horizontal=True,
-    label_visibility="collapsed",
-    key="main_tabs",
-)
+selected_tab = render_main_nav()
 
 if selected_tab == "Trend":
     render_section_header("K-ICS 비율 추이 분석")
@@ -1512,7 +1610,7 @@ if selected_tab == "Trend":
                     type_="value",
                     position="right",
                     is_scale=True,
-                    axislabel_opts=opts.LabelOpts(formatter="{value}%"),
+                    axislabel_opts=opts.LabelOpts(formatter="{value}%", **CHART_LABEL_KWARGS),
                     splitline_opts=opts.SplitLineOpts(is_show=False),
                 )
             )
@@ -1534,13 +1632,16 @@ if selected_tab == "Trend":
             selected_map = {f"{g} (경과조치 전)": False for g in ['생명보험', '손해보험', '전체']}
 
             line.set_global_opts(
-                title_opts=opts.TitleOpts(title="보험업권별 K-ICS 비율 및 국고채 10년 금리 추이", subtitle="기준년월별 현황"),
+                title_opts=opts.TitleOpts(
+                    title="보험업권별 K-ICS 비율 및 국고채 10년 금리 추이",
+                    title_textstyle_opts=CHART_TITLE_STYLE,
+                ),
                 tooltip_opts=opts.TooltipOpts(trigger="axis", axis_pointer_type="cross"),
-                xaxis_opts=opts.AxisOpts(name="기준년월", type_="category", boundary_gap=True),
+                xaxis_opts=opts.AxisOpts(name="기준년월", type_="category", boundary_gap=True, axislabel_opts=opts.LabelOpts(**CHART_LABEL_KWARGS)),
                 yaxis_opts=opts.AxisOpts(
                     name="K-ICS 비율 (%)",
                     is_scale=True,
-                    axislabel_opts=opts.LabelOpts(formatter="{value}%"),
+                    axislabel_opts=opts.LabelOpts(formatter="{value}%", **CHART_LABEL_KWARGS),
                     splitline_opts=opts.SplitLineOpts(is_show=True),
                 ),
                 legend_opts=opts.LegendOpts(
@@ -1548,6 +1649,7 @@ if selected_tab == "Trend":
                     pos_top="8%",
                     orient="horizontal",
                     selected_map=selected_map,
+                    textstyle_opts=CHART_TEXT_STYLE,
                     background_color="rgba(255,255,255,0)",
                     border_color="rgba(255,255,255,0)"
                 ),
@@ -1555,12 +1657,12 @@ if selected_tab == "Trend":
                     opts.DataZoomOpts(range_start=0, range_end=100),
                     opts.DataZoomOpts(type_="inside", range_start=0, range_end=100)
                 ],
-                toolbox_opts=opts.ToolboxOpts(is_show=True),
+                toolbox_opts=opts.ToolboxOpts(is_show=False),
             )
             line.options["grid"] = {
                 "left": "4%",
                 "right": "4%",
-                "top": 130,
+                "top": 112,
                 "bottom": 55,
                 "containLabel": True,
             }
@@ -1605,7 +1707,7 @@ if selected_tab == "Trend":
                         type_="value",
                         position="right",
                         is_scale=True,
-                        axislabel_opts=opts.LabelOpts(formatter="{value}%"),
+                        axislabel_opts=opts.LabelOpts(formatter="{value}%", **CHART_LABEL_KWARGS),
                         splitline_opts=opts.SplitLineOpts(is_show=False),
                     )
                 )
@@ -1624,19 +1726,23 @@ if selected_tab == "Trend":
                     )
 
                 company_line.set_global_opts(
-                    title_opts=opts.TitleOpts(title=f"{selected_company} K-ICS 비율 및 국고채 10년 금리 추이", subtitle="기준년월별 현황"),
+                    title_opts=opts.TitleOpts(
+                        title=f"{selected_company} K-ICS 비율 및 국고채 10년 금리 추이",
+                        title_textstyle_opts=CHART_TITLE_STYLE,
+                    ),
                     tooltip_opts=opts.TooltipOpts(trigger="axis", axis_pointer_type="cross"),
-                    xaxis_opts=opts.AxisOpts(name="기준년월", type_="category", boundary_gap=True),
+                    xaxis_opts=opts.AxisOpts(name="기준년월", type_="category", boundary_gap=True, axislabel_opts=opts.LabelOpts(**CHART_LABEL_KWARGS)),
                     yaxis_opts=opts.AxisOpts(
                         name="K-ICS 비율 (%)",
                         is_scale=True,
-                        axislabel_opts=opts.LabelOpts(formatter="{value}%"),
+                        axislabel_opts=opts.LabelOpts(formatter="{value}%", **CHART_LABEL_KWARGS),
                         splitline_opts=opts.SplitLineOpts(is_show=True),
                     ),
                     legend_opts=opts.LegendOpts(
                         pos_left="center",
                         pos_top="8%",
                         orient="horizontal",
+                        textstyle_opts=CHART_TEXT_STYLE,
                         background_color="rgba(255,255,255,0)",
                         border_color="rgba(255,255,255,0)"
                     ),
@@ -1644,12 +1750,12 @@ if selected_tab == "Trend":
                         opts.DataZoomOpts(range_start=0, range_end=100),
                         opts.DataZoomOpts(type_="inside", range_start=0, range_end=100)
                     ],
-                    toolbox_opts=opts.ToolboxOpts(is_show=True),
+                    toolbox_opts=opts.ToolboxOpts(is_show=False),
                 )
                 company_line.options["grid"] = {
                     "left": "4%",
                     "right": "4%",
-                    "top": 130,
+                    "top": 112,
                     "bottom": 55,
                     "containLabel": True,
                 }
