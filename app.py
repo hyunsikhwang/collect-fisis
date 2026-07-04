@@ -187,6 +187,19 @@ def save_to_md(df):
         except Exception as e:
             st.error(f"데이터 저장 실패: {e}")
 
+def delete_cached_data(target_month):
+    """특정 기준년월의 캐시 데이터를 삭제."""
+    conn = get_md_connection()
+    if not conn:
+        return False
+    try:
+        conn.execute(f"DELETE FROM {TABLE_NAME} WHERE 기준년월 = ?", [target_month])
+        conn.close()
+        return True
+    except Exception as e:
+        st.error(f"기존 데이터 삭제 실패: {e}")
+        return False
+
 def get_after_transition_account_name(account_name):
     """경과조치 전 계정명을 경과조치 후 계정명으로 변환."""
     if pd.isna(account_name):
@@ -921,7 +934,7 @@ async def fetch_statistics(session, semaphore, company, account, api_key, target
 # ==========================================
 # 3. 메인 실행 로직 (Async Wrapper)
 # ==========================================
-async def run_async_collection(api_key, target_month, show_debug_api=False):
+async def run_async_collection(api_key, target_month, show_debug_api=False, overwrite_existing=False):
     status_container = st.status("🚀 데이터 수집 및 캐시 확인 중...", expanded=True)
     error_log = []
     
@@ -931,7 +944,10 @@ async def run_async_collection(api_key, target_month, show_debug_api=False):
         cached_df = get_cached_data(target_month)
         
         if not cached_df.empty:
-            status_container.write(f"✅ {len(cached_df)}건의 데이터를 MotherDuck에서 로드했습니다.")
+            if overwrite_existing:
+                status_container.write(f"⚠️ {len(cached_df)}건의 기존 데이터를 덮어쓰기 대상으로 확인했습니다.")
+            else:
+                status_container.write(f"✅ {len(cached_df)}건의 데이터를 MotherDuck에서 로드했습니다.")
         else:
             status_container.write("ℹ️ 해당 월의 캐시된 데이터가 없습니다.")
         
@@ -957,14 +973,14 @@ async def run_async_collection(api_key, target_month, show_debug_api=False):
                 return []
             status_container.write(f"✅ 회사 목록 확보: 총 {total_companies}개")
 
-            # 2. 작업 생성 (캐시에 없는 것만)
+            # 2. 작업 생성 (캐시에 없는 것만, overwrite 시 전체 재수집)
             tasks = []
             semaphore = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
             
-            status_container.write("📦 2. 미수집 데이터 확인 및 요청 생성 중...")
+            status_container.write("📦 2. 수집 대상 데이터 확인 및 요청 생성 중...")
             # 기존 데이터 키 생성 (회사코드, 계정코드)
             existing_keys = set()
-            if not cached_df.empty:
+            if not cached_df.empty and not overwrite_existing:
                 # 데이터 타입을 문자열로 강제 변환 및 공백 제거 (캐시 미스 방지)
                 existing_keys = set(zip(
                     cached_df['회사코드'].astype(str).str.strip(), 
@@ -990,7 +1006,10 @@ async def run_async_collection(api_key, target_month, show_debug_api=False):
                 status_container.update(label="✅ 캐시 데이터 리로드 완료!", state="complete", expanded=False)
                 return cached_df.to_dict('records')
 
-            status_container.write(f"📡 {len(existing_keys)}건은 캐시에서 발견했고, {total_tasks} 건의 새로운 데이터를 API로 수집합니다...")
+            if overwrite_existing and not cached_df.empty:
+                status_container.write(f"📡 기존 캐시를 덮어쓰기 위해 {total_tasks}건을 API로 다시 수집합니다...")
+            else:
+                status_container.write(f"📡 {len(existing_keys)}건은 캐시에서 발견했고, {total_tasks} 건의 새로운 데이터를 API로 수집합니다...")
 
             # 3. 실행 및 진행률 표시
             new_results = []
@@ -1012,8 +1031,11 @@ async def run_async_collection(api_key, target_month, show_debug_api=False):
                 # 값 전처리 (저장 전 숫자로 변환)
                 new_df['값'] = pd.to_numeric(new_df['값'].astype(str).str.replace(',', ''), errors='coerce')
 
+            if overwrite_existing and cached_df.empty:
+                overwrite_existing = False
+
             result_frames = []
-            if not cached_df.empty:
+            if not cached_df.empty and not overwrite_existing:
                 result_frames.append(cached_df[COLUMNS])
             if not new_df.empty:
                 result_frames.append(new_df[COLUMNS])
@@ -1022,15 +1044,22 @@ async def run_async_collection(api_key, target_month, show_debug_api=False):
                 all_results_df = pd.concat(result_frames, ignore_index=True)
                 all_results_df = apply_transition_fallbacks(all_results_df)
 
-                rows_to_save = all_results_df[
-                    ~all_results_df.apply(
-                        lambda row: (
-                            str(row['회사코드']).strip(),
-                            str(row['계정코드']).strip()
-                        ) in existing_keys,
-                        axis=1
-                    )
-                ].drop_duplicates(subset=['회사코드', '계정코드'], keep='last')
+                if overwrite_existing:
+                    if delete_cached_data(target_month):
+                        status_container.write("🧹 기존 캐시 데이터를 삭제했습니다.")
+                    else:
+                        return []
+                    rows_to_save = all_results_df.drop_duplicates(subset=['회사코드', '계정코드'], keep='last')
+                else:
+                    rows_to_save = all_results_df[
+                        ~all_results_df.apply(
+                            lambda row: (
+                                str(row['회사코드']).strip(),
+                                str(row['계정코드']).strip()
+                            ) in existing_keys,
+                            axis=1
+                        )
+                    ].drop_duplicates(subset=['회사코드', '계정코드'], keep='last')
 
                 if not rows_to_save.empty:
                     status_container.write(f"💾 {len(rows_to_save)}건의 신규/보정 데이터를 MotherDuck에 저장 중...")
@@ -1647,18 +1676,48 @@ elif selected_tab == "📡 Collector":
             )
         show_debug_api = st.checkbox("🔍 API 통신 로그 확인 (상세)", value=True)
 
+    existing_target_df = pd.DataFrame()
+    overwrite_existing = False
+    if API_KEY and TARGET_MONTH:
+        existing_target_df = get_cached_data(TARGET_MONTH)
+
+    if not existing_target_df.empty:
+        st.warning(f"{TARGET_MONTH} 데이터가 이미 {len(existing_target_df)}건 저장되어 있습니다.")
+        overwrite_choice = st.radio(
+            "기존 데이터를 어떻게 처리할까요?",
+            options=[
+                "기존 데이터 유지: 누락된 항목만 추가 수집",
+                "기존 데이터 덮어쓰기: 삭제 후 전체 재수집",
+            ],
+            index=0,
+            help="덮어쓰기를 선택하면 API 수집이 성공한 뒤 해당 기준년월의 기존 캐시를 삭제하고 새 결과를 저장합니다.",
+        )
+        overwrite_existing = overwrite_choice.startswith("기존 데이터 덮어쓰기")
+        if overwrite_existing:
+            st.error("덮어쓰기 모드입니다. 수집 성공 후 기존 동일 기간 데이터가 새 데이터로 교체됩니다.")
+    elif TARGET_MONTH:
+        st.info(f"{TARGET_MONTH}에 저장된 기존 데이터가 없습니다. 전체 수집을 진행합니다.")
+
     st.markdown(f"""
     Open API를 사용하여 보험사의 지급여력비율 관련 데이터를 수집하고 MotherDuck에 저장합니다.
     - **대상**: 생명보험(H), 손해보험(I)
     """)
     
     # 실행 버튼
-    if st.button("🚀 데이터 수집 시작 (Start Collection)", type="primary"):
+    submit_label = "♻️ 기존 데이터 덮어쓰기" if overwrite_existing else "🚀 데이터 수집 시작 (Start Collection)"
+    if st.button(submit_label, type="primary"):
         if not API_KEY:
             st.error("API Key를 입력해주세요. (사이드바에서 입력 가능)")
         else:
             # 비동기 함수 실행
-            raw_data = asyncio.run(run_async_collection(API_KEY, TARGET_MONTH, show_debug_api=show_debug_api))
+            raw_data = asyncio.run(
+                run_async_collection(
+                    API_KEY,
+                    TARGET_MONTH,
+                    show_debug_api=show_debug_api,
+                    overwrite_existing=overwrite_existing,
+                )
+            )
 
             if raw_data:
                 df = pd.DataFrame(raw_data)
