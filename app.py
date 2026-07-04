@@ -28,39 +28,50 @@ def inject_design_system():
     st.html(
         """
         <style>
+        @import url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/variable/pretendardvariable-dynamic-subset.css");
+
         :root {
-            --app-bg: #f6f8fb;
+            --app-bg: #f7f8fa;
             --surface: #ffffff;
-            --surface-soft: #f9fbfd;
-            --text: #102033;
-            --muted: #667085;
-            --subtle: #98a2b3;
-            --border: #e4e9f1;
-            --border-strong: #d3dbe8;
-            --primary: #163b62;
-            --primary-2: #1e5f7a;
-            --accent: #21a7a0;
-            --accent-soft: #e8f7f6;
+            --surface-soft: #fafbfc;
+            --text: #111827;
+            --muted: #6b7280;
+            --subtle: #9ca3af;
+            --border: #e5e7eb;
+            --border-strong: #d1d5db;
+            --primary: #111827;
+            --accent: #0f766e;
             --warning-bg: #fff7e6;
             --warning-border: #ffd591;
             --danger-bg: #fff1f0;
             --danger-border: #ffa39e;
-            --shadow-sm: 0 1px 2px rgba(16, 32, 51, 0.05);
-            --shadow-md: 0 12px 30px rgba(16, 32, 51, 0.08);
+            --shadow-sm: 0 1px 2px rgba(17, 24, 39, 0.04);
             --radius: 8px;
         }
 
+        html, body, [class*="css"], [class*="st-"], button, input, textarea, select {
+            font-family: "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, system-ui, sans-serif !important;
+            letter-spacing: 0 !important;
+        }
+
+        .material-symbols-rounded,
+        .material-symbols-outlined,
+        .material-icons,
+        [class*="material-symbols"] {
+            font-family: "Material Symbols Rounded", "Material Symbols Outlined", "Material Icons" !important;
+            font-weight: normal !important;
+            letter-spacing: normal !important;
+        }
+
         .stApp {
-            background:
-                linear-gradient(180deg, #ffffff 0%, var(--app-bg) 280px),
-                var(--app-bg);
+            background: var(--app-bg);
             color: var(--text);
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans KR", sans-serif;
+            font-family: "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
         }
 
         .stApp .block-container {
-            max-width: 1480px;
-            padding: 1.15rem 2.25rem 2.75rem;
+            max-width: 1400px;
+            padding: 1rem 1.5rem 2.5rem;
         }
 
         #MainMenu, footer, header[data-testid="stHeader"] {
@@ -79,76 +90,53 @@ def inject_design_system():
 
         .app-shell-header {
             display: flex;
-            align-items: flex-end;
+            align-items: center;
             justify-content: space-between;
-            gap: 1.5rem;
-            padding: 1.15rem 0 1rem;
+            gap: 1rem;
+            padding: 0.35rem 0 0.9rem;
             border-bottom: 1px solid var(--border);
-            margin-bottom: 0.9rem;
+            margin-bottom: 1rem;
         }
 
         .app-brand {
             display: flex;
             align-items: center;
-            gap: 0.85rem;
+            gap: 0.65rem;
         }
 
         .app-brand-mark {
-            width: 42px;
-            height: 42px;
-            border-radius: var(--radius);
-            background: linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%);
+            width: 32px;
+            height: 32px;
+            border-radius: 7px;
+            background: var(--primary);
             color: #ffffff;
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            font-weight: 800;
-            font-size: 1rem;
-            box-shadow: var(--shadow-sm);
+            font-weight: 760;
+            font-size: 0.86rem;
         }
 
         .app-title {
             margin: 0;
-            font-size: 1.55rem;
+            font-size: 1.28rem;
             line-height: 1.2;
             font-weight: 750;
         }
 
-        .app-subtitle {
-            margin: 0.18rem 0 0;
-            color: var(--muted);
-            font-size: 0.92rem;
-            line-height: 1.45;
-        }
-
-        .app-meta {
-            color: var(--muted);
-            font-size: 0.82rem;
-            line-height: 1.4;
-            text-align: right;
-        }
-
         .section-heading {
-            margin: 1.15rem 0 0.85rem;
-            padding: 0.95rem 1.05rem;
-            background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: var(--radius);
-            box-shadow: var(--shadow-sm);
+            margin: 1.2rem 0 0.75rem;
+            padding: 0;
+            background: transparent;
+            border: 0;
+            box-shadow: none;
         }
 
         .section-heading h2 {
             margin: 0;
-            font-size: 1.15rem;
+            font-size: 1.12rem;
             line-height: 1.25;
-            font-weight: 720;
-        }
-
-        .section-heading p {
-            margin: 0.3rem 0 0;
-            color: var(--muted);
-            font-size: 0.88rem;
-            line-height: 1.45;
+            font-weight: 740;
         }
 
         div[data-testid="stVerticalBlockBorderWrapper"],
@@ -156,7 +144,7 @@ def inject_design_system():
             border-color: var(--border) !important;
             border-radius: var(--radius) !important;
             background: var(--surface) !important;
-            box-shadow: var(--shadow-sm);
+            box-shadow: none;
         }
 
         div[data-testid="stExpander"] summary {
@@ -181,27 +169,46 @@ def inject_design_system():
         }
 
         div[role="radiogroup"] {
-            display: inline-flex;
-            gap: 0.35rem;
-            padding: 0.25rem;
+            display: flex;
+            flex-wrap: nowrap;
+            gap: 0.25rem;
+            width: fit-content;
+            max-width: 100%;
+            overflow-x: auto;
+            padding: 0.2rem;
             border: 1px solid var(--border);
             border-radius: var(--radius);
-            background: #eef3f8;
-            box-shadow: var(--shadow-sm);
+            background: #f1f3f5;
+            box-shadow: none;
+            scrollbar-width: none;
+            white-space: nowrap;
+        }
+
+        div[role="radiogroup"] > label,
+        div[role="radiogroup"] > div {
+            flex: 0 0 auto !important;
+            white-space: nowrap !important;
+        }
+
+        div[role="radiogroup"]::-webkit-scrollbar {
+            display: none;
         }
 
         div[role="radiogroup"] label {
+            flex: 0 0 auto;
             min-height: 34px;
-            padding: 0 0.7rem;
-            border-radius: 7px;
+            padding: 0 0.85rem;
+            border-radius: 6px;
             color: var(--muted) !important;
-            font-weight: 700 !important;
+            font-size: 0.84rem !important;
+            font-weight: 650 !important;
+            white-space: nowrap !important;
         }
 
         div[role="radiogroup"] label:has(input:checked) {
             background: var(--surface);
             color: var(--primary) !important;
-            box-shadow: var(--shadow-sm);
+            box-shadow: 0 1px 2px rgba(17, 24, 39, 0.06);
         }
 
         div[role="radiogroup"] label > div:first-child {
@@ -247,7 +254,7 @@ def inject_design_system():
             border: 1px solid var(--border) !important;
             border-radius: var(--radius) !important;
             background: var(--surface) !important;
-            box-shadow: var(--shadow-sm);
+            box-shadow: none;
         }
 
         div[data-testid="stDataFrame"] {
@@ -275,12 +282,20 @@ def inject_design_system():
             }
 
             .app-shell-header {
-                align-items: flex-start;
-                flex-direction: column;
+                align-items: center;
+                flex-direction: row;
             }
 
-            .app-meta {
-                text-align: left;
+            div[role="radiogroup"] {
+                gap: 0.15rem;
+                width: 100%;
+                justify-content: flex-start;
+            }
+
+            div[role="radiogroup"] label {
+                min-height: 32px;
+                padding: 0 0.45rem;
+                font-size: 0.78rem !important;
             }
         }
         </style>
@@ -294,23 +309,18 @@ def render_app_header():
         <div class="app-shell-header">
             <div class="app-brand">
                 <div class="app-brand-mark">K</div>
-                <div>
-                    <h1 class="app-title">K-ICS Ratio Dashboard</h1>
-                    <p class="app-subtitle">보험사 지급여력비율 추이, 스냅샷, 변동 분석, 데이터 수집을 한 화면에서 관리합니다.</p>
-                </div>
+                <h1 class="app-title">K-ICS Ratio Dashboard</h1>
             </div>
-            <div class="app-meta">FISIS Open API<br/>MotherDuck cache</div>
         </div>
         """,
     )
 
-def render_section_header(title, description):
+def render_section_header(title):
     """Render a compact section header."""
     st.html(
         f"""
         <div class="section-heading">
             <h2>{title}</h2>
-            <p>{description}</p>
         </div>
         """,
     )
@@ -1280,7 +1290,8 @@ async def run_async_collection(api_key, target_month, show_debug_api=False, over
             if total_companies == 0:
                 status_container.write("회사 정보를 가져오지 못했습니다. API Key를 확인해 주세요.")
                 if error_log:
-                    with st.expander("에러 로그 상세"):
+                    with st.container(border=True):
+                        st.markdown("#### 에러 로그 상세")
                         for err in error_log:
                             st.write(err)
                 return []
@@ -1382,7 +1393,8 @@ async def run_async_collection(api_key, target_month, show_debug_api=False, over
             else:
                 if error_log:
                     status_container.write("일부 요청에서 오류가 발생하여 신규 수집 데이터가 없습니다.")
-                    with st.expander("에러 로그 상세"):
+                    with st.container(border=True):
+                        st.markdown("#### 에러 로그 상세")
                         for err in error_log:
                             st.write(err)
                 results = cached_df.to_dict('records')
@@ -1412,10 +1424,7 @@ selected_tab = st.radio(
 )
 
 if selected_tab == "Trend":
-    render_section_header(
-        "K-ICS 비율 추이 분석",
-        "업권별 K-ICS 비율, 국고채 10년 금리, 개별 회사 추이를 함께 비교합니다."
-    )
+    render_section_header("K-ICS 비율 추이 분석")
     
     analysis_df = load_kics_analysis_data()
     company_ts_df = load_company_kics_timeseries()
@@ -1647,38 +1656,14 @@ if selected_tab == "Trend":
 
                 st_pyecharts(company_line, height="500px", key="dashboard_company_line_chart", renderer="svg")
         
-        with st.expander("상세 수치 데이터 확인"):
+        with st.container(border=True):
+            st.markdown("#### 상세 수치 데이터")
             st.dataframe(analysis_df, width="stretch")
     else:
         st.warning("표시할 분석 데이터가 없습니다. 먼저 'Collector' 탭에서 데이터를 수집해 주세요.")
-        
-        # 디버깅을 위한 데이터 현황 세션 (Dashboard에서도 데이터가 없을 때 표시)
-        with st.expander("데이터베이스 현황 확인"):
-            conn = get_md_connection()
-            if conn:
-                try:
-                    count = conn.execute(f"SELECT COUNT(*) FROM {TABLE_NAME}").fetchone()[0]
-                    st.write(f"현재 총 레코드 수: {count}건")
-                    
-                    st.write("보관 중인 계정명 목록:")
-                    distinct_accounts = conn.execute(f"SELECT DISTINCT 계정명 FROM {TABLE_NAME}").df()
-                    st.dataframe(distinct_accounts, width="stretch")
-                    
-                    st.write("보관 중인 기준년월 목록:")
-                    distinct_months = conn.execute(f"SELECT DISTINCT 기준년월 FROM {TABLE_NAME} ORDER BY 기준년월").df()
-                    st.dataframe(distinct_months, width="stretch")
-                    
-                    conn.close()
-                except Exception as e:
-                    st.error(f"현황 확인 중 오류: {e}")
-            else:
-                st.warning("MotherDuck 연결 실패 (토큰 확인 필요)")
 
 elif selected_tab == "Snapshot":
-    render_section_header(
-        "회사별 K-ICS 비율 현황",
-        "선택한 기준년월의 회사별 지급여력비율과 경과조치 효과를 업권별로 확인합니다."
-    )
+    render_section_header("회사별 K-ICS 비율 현황")
     
     # 가용한 모든 기준년월 가져오기
     available_months = get_available_months()
@@ -1774,7 +1759,8 @@ elif selected_tab == "Snapshot":
                 weighted_avg = (sum_num / sum_den * 100) if sum_den > 0 else 0
                 render_sector_chart(sector, filtered_df, company_df, color_sets, weighted_avg)
             
-            with st.expander("상세 데이터 확인"):
+            with st.container(border=True):
+                st.markdown("#### 상세 데이터")
                 # 표시용 데이터프레임 구성
                 display_df = filtered_df.copy()
                 display_df['영문회사명'] = display_df['회사명'].map(get_english_company_name)
@@ -1797,10 +1783,7 @@ elif selected_tab == "Snapshot":
         st.warning("표시할 회사별 데이터가 없습니다. 먼저 'Collector' 탭에서 데이터를 수집해 주세요.")
 
 elif selected_tab == "Changes":
-    render_section_header(
-        "회사별 K-ICS 변동",
-        "두 기준시점의 경과조치 전후 비율 변화를 회사별로 비교합니다."
-    )
+    render_section_header("회사별 K-ICS 변동")
 
     available_months = get_available_months()
     if len(available_months) < 2:
@@ -1959,7 +1942,8 @@ elif selected_tab == "Changes":
                                 f"{sector}_after"
                             )
 
-                with st.expander("상세 데이터 확인"):
+                with st.container(border=True):
+                    st.markdown("#### 상세 데이터")
                     if chart_df.empty:
                         st.info("표시할 상세 데이터가 없습니다.")
                     else:
@@ -1976,13 +1960,11 @@ elif selected_tab == "Changes":
                         )
 
 elif selected_tab == "Collector":
-    render_section_header(
-        "FSS Open API 데이터 수집",
-        "기준년월별 보험사 지급여력 데이터를 수집하고 캐시 상태를 관리합니다."
-    )
+    render_section_header("FSS Open API 데이터 수집")
     
     # 설정 섹션 (기존 사이드바에서 이동)
-    with st.expander("수집 설정", expanded=True):
+    with st.container(border=True):
+        st.markdown("#### 수집 설정")
         col1, col2 = st.columns(2)
         with col1:
             stored_api_key = get_secret("FSS_API_KEY", "")
@@ -2027,11 +2009,6 @@ elif selected_tab == "Collector":
     elif TARGET_MONTH:
         st.info(f"{TARGET_MONTH}에 저장된 기존 데이터가 없습니다. 전체 수집을 진행합니다.")
 
-    st.markdown(f"""
-    Open API를 사용하여 보험사의 지급여력비율 관련 데이터를 수집하고 MotherDuck에 저장합니다.
-    - **대상**: 생명보험(H), 손해보험(I)
-    """)
-    
     # 실행 버튼
     submit_label = "기존 데이터 덮어쓰기" if overwrite_existing else "데이터 수집 시작"
     if st.button(submit_label, type="primary"):
