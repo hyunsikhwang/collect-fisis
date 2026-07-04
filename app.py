@@ -65,6 +65,11 @@ MD_TOKEN = get_secret("MOTHERDUCK_TOKEN", "")
 DB_NAME = "fisis_cache"
 TABLE_NAME = "insurance_stats"
 COLUMNS = ['구분', '회사코드', '회사명', '계정코드', '계정명', '기준년월', '단위', '값']
+TRANSITION_FALLBACK_ACCOUNT_CODES = {
+    'A': 'D',
+    'B': 'E',
+    'C': 'F',
+}
 
 # 회사명 한/영 매핑 (표시용)
 CompKoEn = {
@@ -181,6 +186,65 @@ def save_to_md(df):
             conn.close()
         except Exception as e:
             st.error(f"데이터 저장 실패: {e}")
+
+def get_after_transition_account_name(account_name):
+    """경과조치 전 계정명을 경과조치 후 계정명으로 변환."""
+    if pd.isna(account_name):
+        return account_name
+
+    replacements = [
+        ("경과조치 적용 전", "경과조치 적용 후"),
+        ("경과조치 전", "경과조치 후"),
+        ("경과조치전", "경과조치후"),
+    ]
+    after_name = str(account_name)
+    for before_text, after_text in replacements:
+        if before_text in after_name:
+            return after_name.replace(before_text, after_text)
+    return after_name
+
+def apply_transition_fallbacks(df):
+    """경과조치 후 값이 없으면 동일 회사의 경과조치 전 값을 사용."""
+    if df.empty:
+        return df
+
+    normalized_df = df.copy()
+    normalized_df['계정코드'] = normalized_df['계정코드'].astype(str).str.strip()
+    normalized_df['값'] = pd.to_numeric(normalized_df['값'].astype(str).str.replace(',', ''), errors='coerce')
+
+    key_cols = ['구분', '회사코드', '회사명', '기준년월']
+    lookup_cols = key_cols + ['계정코드']
+    indexed_rows = {
+        tuple(row[col] for col in lookup_cols): idx
+        for idx, row in normalized_df.iterrows()
+    }
+
+    fallback_rows = []
+    for before_code, after_code in TRANSITION_FALLBACK_ACCOUNT_CODES.items():
+        before_rows = normalized_df[normalized_df['계정코드'] == before_code]
+        for _, before_row in before_rows.iterrows():
+            before_value = before_row['값']
+            if pd.isna(before_value):
+                continue
+
+            after_key = tuple([before_row[col] for col in key_cols] + [after_code])
+            after_idx = indexed_rows.get(after_key)
+
+            if after_idx is not None:
+                if pd.isna(normalized_df.at[after_idx, '값']):
+                    normalized_df.at[after_idx, '값'] = before_value
+                continue
+
+            fallback_row = before_row.copy()
+            fallback_row['계정코드'] = after_code
+            fallback_row['계정명'] = get_after_transition_account_name(before_row['계정명'])
+            fallback_row['값'] = before_value
+            fallback_rows.append(fallback_row)
+
+    if fallback_rows:
+        normalized_df = pd.concat([normalized_df, pd.DataFrame(fallback_rows)], ignore_index=True)
+
+    return normalized_df
 
 def load_kics_analysis_data():
     """K-ICS 분석을 위한 전체 데이터 로드 및 계산"""
@@ -942,21 +1006,37 @@ async def run_async_collection(api_key, target_month, show_debug_api=False):
                 if total_tasks > 0:
                     progress_bar.progress(completed_count / total_tasks)
 
-            # 4. 새로운 데이터 DB 저장
-            if new_results:
-                status_container.write(f"💾 {len(new_results)}건의 새로운 데이터를 MotherDuck에 저장 중...")
-                new_df = pd.DataFrame(new_results)
+            # 4. 새로운 데이터 DB 저장 및 경과조치 후 누락값 보정
+            new_df = pd.DataFrame(new_results)
+            if not new_df.empty:
                 # 값 전처리 (저장 전 숫자로 변환)
                 new_df['값'] = pd.to_numeric(new_df['값'].astype(str).str.replace(',', ''), errors='coerce')
-                save_to_md(new_df)
-                
-                # 기존 데이터와 합치기
-                if not cached_df.empty:
-                    # 컬럼 순서 및 이름 일관성 확보
-                    all_results_df = pd.concat([cached_df[COLUMNS], new_df[COLUMNS]], ignore_index=True)
-                    results = all_results_df.to_dict('records')
-                else:
-                    results = new_results
+
+            result_frames = []
+            if not cached_df.empty:
+                result_frames.append(cached_df[COLUMNS])
+            if not new_df.empty:
+                result_frames.append(new_df[COLUMNS])
+
+            if result_frames:
+                all_results_df = pd.concat(result_frames, ignore_index=True)
+                all_results_df = apply_transition_fallbacks(all_results_df)
+
+                rows_to_save = all_results_df[
+                    ~all_results_df.apply(
+                        lambda row: (
+                            str(row['회사코드']).strip(),
+                            str(row['계정코드']).strip()
+                        ) in existing_keys,
+                        axis=1
+                    )
+                ].drop_duplicates(subset=['회사코드', '계정코드'], keep='last')
+
+                if not rows_to_save.empty:
+                    status_container.write(f"💾 {len(rows_to_save)}건의 신규/보정 데이터를 MotherDuck에 저장 중...")
+                    save_to_md(rows_to_save)
+
+                results = all_results_df[COLUMNS].to_dict('records')
             else:
                 if error_log:
                     status_container.write("⚠️ 일부 요청에서 오류가 발생하여 신규 수집 데이터가 없습니다.")
@@ -1625,4 +1705,3 @@ elif selected_tab == "📡 Collector":
                 st.info("💡 새로운 데이터가 저장되었습니다. 'Trend' 탭으로 이동하여 차트를 확인해 보세요.")
             else:
                 st.warning("수집된 데이터가 없습니다. API Key나 기준년월을 확인해주세요.")
-
