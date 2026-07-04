@@ -259,6 +259,29 @@ def apply_transition_fallbacks(df):
 
     return normalized_df
 
+def apply_kics_after_value_fallbacks(pdf, target_accounts):
+    """회사별 피벗 데이터에서 경과조치 후 금액/기준금액 비정상값을 전 값으로 보정."""
+    if pdf.empty or len(target_accounts) < 4:
+        return pdf
+
+    fallback_df = pdf.copy()
+    fallback_pairs = [
+        (target_accounts[0], target_accounts[2]),
+        (target_accounts[1], target_accounts[3]),
+    ]
+
+    for before_col, after_col in fallback_pairs:
+        if before_col not in fallback_df.columns or after_col not in fallback_df.columns:
+            continue
+
+        before_values = pd.to_numeric(fallback_df[before_col], errors='coerce')
+        after_values = pd.to_numeric(fallback_df[after_col], errors='coerce')
+        invalid_after = after_values.isna() | (after_values <= 0)
+        valid_before = before_values.notna()
+        fallback_df.loc[invalid_after & valid_before, after_col] = before_values[invalid_after & valid_before]
+
+    return fallback_df
+
 def load_kics_analysis_data():
     """K-ICS 분석을 위한 전체 데이터 로드 및 계산"""
     conn = get_md_connection()
@@ -338,6 +361,7 @@ def load_kics_analysis_data():
         for col in target_accounts:
             if col not in pdf.columns:
                 pdf[col] = 0
+        pdf = apply_kics_after_value_fallbacks(pdf, target_accounts)
 
         # 그룹별 합계 계산 (생명보험, 손해보험, 전체)
         # 1. 생명/손해별 합계
@@ -415,6 +439,7 @@ def load_company_kics_timeseries():
         for col in target_accounts:
             if col not in pdf.columns:
                 pdf[col] = 0
+        pdf = apply_kics_after_value_fallbacks(pdf, target_accounts)
 
         pdf['ratio_before'] = (pdf['지급여력금액(경과조치 적용 전)'] /
                                pdf['지급여력기준금액(경과조치 적용 전)'].replace(0, pd.NA)) * 100
