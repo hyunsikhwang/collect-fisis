@@ -1,5 +1,4 @@
 ﻿import streamlit as st
-import streamlit_shadcn_ui as ui
 import aiohttp
 import asyncio
 import pandas as pd
@@ -24,17 +23,299 @@ st.set_page_config(
     layout="wide"
 )
 
-# Reduce Streamlit's default large top padding.
-st.markdown(
-    """
-    <style>
-    .stApp .block-container {
-        padding-top: 1.5rem;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
+def inject_design_system():
+    """Apply the app-wide visual system."""
+    st.html(
+        """
+        <style>
+        :root {
+            --app-bg: #f6f8fb;
+            --surface: #ffffff;
+            --surface-soft: #f9fbfd;
+            --text: #102033;
+            --muted: #667085;
+            --subtle: #98a2b3;
+            --border: #e4e9f1;
+            --border-strong: #d3dbe8;
+            --primary: #163b62;
+            --primary-2: #1e5f7a;
+            --accent: #21a7a0;
+            --accent-soft: #e8f7f6;
+            --warning-bg: #fff7e6;
+            --warning-border: #ffd591;
+            --danger-bg: #fff1f0;
+            --danger-border: #ffa39e;
+            --shadow-sm: 0 1px 2px rgba(16, 32, 51, 0.05);
+            --shadow-md: 0 12px 30px rgba(16, 32, 51, 0.08);
+            --radius: 8px;
+        }
+
+        .stApp {
+            background:
+                linear-gradient(180deg, #ffffff 0%, var(--app-bg) 280px),
+                var(--app-bg);
+            color: var(--text);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans KR", sans-serif;
+        }
+
+        .stApp .block-container {
+            max-width: 1480px;
+            padding: 1.15rem 2.25rem 2.75rem;
+        }
+
+        #MainMenu, footer, header[data-testid="stHeader"] {
+            visibility: hidden;
+            height: 0;
+        }
+
+        h1, h2, h3, h4 {
+            color: var(--text);
+            letter-spacing: 0;
+        }
+
+        h2, h3 {
+            margin-top: 0.35rem;
+        }
+
+        .app-shell-header {
+            display: flex;
+            align-items: flex-end;
+            justify-content: space-between;
+            gap: 1.5rem;
+            padding: 1.15rem 0 1rem;
+            border-bottom: 1px solid var(--border);
+            margin-bottom: 0.9rem;
+        }
+
+        .app-brand {
+            display: flex;
+            align-items: center;
+            gap: 0.85rem;
+        }
+
+        .app-brand-mark {
+            width: 42px;
+            height: 42px;
+            border-radius: var(--radius);
+            background: linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%);
+            color: #ffffff;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 800;
+            font-size: 1rem;
+            box-shadow: var(--shadow-sm);
+        }
+
+        .app-title {
+            margin: 0;
+            font-size: 1.55rem;
+            line-height: 1.2;
+            font-weight: 750;
+        }
+
+        .app-subtitle {
+            margin: 0.18rem 0 0;
+            color: var(--muted);
+            font-size: 0.92rem;
+            line-height: 1.45;
+        }
+
+        .app-meta {
+            color: var(--muted);
+            font-size: 0.82rem;
+            line-height: 1.4;
+            text-align: right;
+        }
+
+        .section-heading {
+            margin: 1.15rem 0 0.85rem;
+            padding: 0.95rem 1.05rem;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow-sm);
+        }
+
+        .section-heading h2 {
+            margin: 0;
+            font-size: 1.15rem;
+            line-height: 1.25;
+            font-weight: 720;
+        }
+
+        .section-heading p {
+            margin: 0.3rem 0 0;
+            color: var(--muted);
+            font-size: 0.88rem;
+            line-height: 1.45;
+        }
+
+        div[data-testid="stVerticalBlockBorderWrapper"],
+        div[data-testid="stExpander"] details {
+            border-color: var(--border) !important;
+            border-radius: var(--radius) !important;
+            background: var(--surface) !important;
+            box-shadow: var(--shadow-sm);
+        }
+
+        div[data-testid="stExpander"] summary {
+            font-weight: 650;
+            color: var(--text);
+        }
+
+        .stAlert {
+            border-radius: var(--radius);
+            border: 1px solid var(--border);
+        }
+
+        .stSelectbox label,
+        .stMultiSelect label,
+        .stTextInput label,
+        .stRadio label,
+        .stCheckbox label,
+        .stForm label {
+            color: var(--text) !important;
+            font-size: 0.86rem !important;
+            font-weight: 650 !important;
+        }
+
+        div[role="radiogroup"] {
+            display: inline-flex;
+            gap: 0.35rem;
+            padding: 0.25rem;
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            background: #eef3f8;
+            box-shadow: var(--shadow-sm);
+        }
+
+        div[role="radiogroup"] label {
+            min-height: 34px;
+            padding: 0 0.7rem;
+            border-radius: 7px;
+            color: var(--muted) !important;
+            font-weight: 700 !important;
+        }
+
+        div[role="radiogroup"] label:has(input:checked) {
+            background: var(--surface);
+            color: var(--primary) !important;
+            box-shadow: var(--shadow-sm);
+        }
+
+        div[role="radiogroup"] label > div:first-child {
+            display: none;
+        }
+
+        div[data-baseweb="select"] > div,
+        div[data-baseweb="input"] > div,
+        textarea,
+        input {
+            border-radius: var(--radius) !important;
+            border-color: var(--border-strong) !important;
+            background: #ffffff !important;
+            min-height: 40px;
+            box-shadow: none !important;
+        }
+
+        div[data-baseweb="select"] > div:focus-within,
+        div[data-baseweb="input"] > div:focus-within {
+            border-color: var(--accent) !important;
+            box-shadow: 0 0 0 3px rgba(33, 167, 160, 0.14) !important;
+        }
+
+        .stButton button,
+        .stDownloadButton button,
+        .stFormSubmitButton button {
+            border-radius: var(--radius) !important;
+            border: 1px solid var(--border-strong) !important;
+            font-weight: 700 !important;
+            min-height: 40px;
+            box-shadow: var(--shadow-sm);
+        }
+
+        .stButton button[kind="primary"],
+        .stDownloadButton button[kind="primary"],
+        .stFormSubmitButton button[kind="primary"] {
+            background: var(--primary) !important;
+            border-color: var(--primary) !important;
+            color: #ffffff !important;
+        }
+
+        iframe {
+            border: 1px solid var(--border) !important;
+            border-radius: var(--radius) !important;
+            background: var(--surface) !important;
+            box-shadow: var(--shadow-sm);
+        }
+
+        div[data-testid="stDataFrame"] {
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            overflow: hidden;
+            box-shadow: var(--shadow-sm);
+        }
+
+        hr {
+            border-color: var(--border);
+            margin: 1.4rem 0;
+        }
+
+        .stMarkdown code {
+            border-radius: 6px;
+            background: #eef3f8;
+            color: var(--primary);
+            padding: 0.12rem 0.34rem;
+        }
+
+        @media (max-width: 760px) {
+            .stApp .block-container {
+                padding: 0.75rem 1rem 2rem;
+            }
+
+            .app-shell-header {
+                align-items: flex-start;
+                flex-direction: column;
+            }
+
+            .app-meta {
+                text-align: left;
+            }
+        }
+        </style>
+        """,
+    )
+
+def render_app_header():
+    """Render the product header."""
+    st.html(
+        """
+        <div class="app-shell-header">
+            <div class="app-brand">
+                <div class="app-brand-mark">K</div>
+                <div>
+                    <h1 class="app-title">K-ICS Ratio Dashboard</h1>
+                    <p class="app-subtitle">보험사 지급여력비율 추이, 스냅샷, 변동 분석, 데이터 수집을 한 화면에서 관리합니다.</p>
+                </div>
+            </div>
+            <div class="app-meta">FISIS Open API<br/>MotherDuck cache</div>
+        </div>
+        """,
+    )
+
+def render_section_header(title, description):
+    """Render a compact section header."""
+    st.html(
+        f"""
+        <div class="section-heading">
+            <h2>{title}</h2>
+            <p>{description}</p>
+        </div>
+        """,
+    )
+
+inject_design_system()
 
 # 비동기 루프 충돌 방지
 nest_asyncio.apply()
@@ -70,6 +351,13 @@ TRANSITION_FALLBACK_ACCOUNT_CODES = {
     'B': 'E',
     'C': 'F',
 }
+SECTOR_COLORS = {
+    '생명보험': '#1f5f8b',
+    '손해보험': '#c7792b',
+    '재보험': '#2d7d6f',
+    '전체': '#1f8f86',
+}
+CHART_NEUTRAL = '#667085'
 
 # 회사명 한/영 매핑 (표시용)
 CompKoEn = {
@@ -298,7 +586,7 @@ def load_kics_analysis_data():
         ]
         
         # [DEBUG] 디버깅 옵션 (Dashboard 상단에 표시됨)
-        show_debug = st.checkbox("🔍 상세 데이터 추출 과정 확인 (디버거)", value=False)
+        show_debug = st.checkbox("상세 데이터 추출 과정 확인", value=False)
         
         # 1. DB에 있는 모든 독특한 계정명 확인
         all_accounts = conn.execute(f"SELECT DISTINCT 계정명 FROM {TABLE_NAME}").df()['계정명'].tolist()
@@ -453,7 +741,7 @@ def load_company_kics_timeseries():
 
 def fetch_ecos_bond_yield(start_month, end_month):
     """ECOS에서 국고채 10년 금리 조회"""
-    ECOS_API_KEY = st.secrets.get("ECOS_API_KEY", "")
+    ECOS_API_KEY = get_secret("ECOS_API_KEY", "")
     if not ECOS_API_KEY:
         return pd.DataFrame()
     
@@ -960,25 +1248,25 @@ async def fetch_statistics(session, semaphore, company, account, api_key, target
 # 3. 메인 실행 로직 (Async Wrapper)
 # ==========================================
 async def run_async_collection(api_key, target_month, show_debug_api=False, overwrite_existing=False):
-    status_container = st.status("🚀 데이터 수집 및 캐시 확인 중...", expanded=True)
+    status_container = st.status("데이터 수집 및 캐시 확인 중...", expanded=True)
     error_log = []
     
     try:
         # 0. MotherDuck 캐시 확인
-        status_container.write(f"🔎 {target_month} 데이터 캐시 확인 중...")
+        status_container.write(f"{target_month} 데이터 캐시 확인 중...")
         cached_df = get_cached_data(target_month)
         
         if not cached_df.empty:
             if overwrite_existing:
-                status_container.write(f"⚠️ {len(cached_df)}건의 기존 데이터를 덮어쓰기 대상으로 확인했습니다.")
+                status_container.write(f"{len(cached_df)}건의 기존 데이터를 덮어쓰기 대상으로 확인했습니다.")
             else:
-                status_container.write(f"✅ {len(cached_df)}건의 데이터를 MotherDuck에서 로드했습니다.")
+                status_container.write(f"{len(cached_df)}건의 데이터를 MotherDuck에서 로드했습니다.")
         else:
-            status_container.write("ℹ️ 해당 월의 캐시된 데이터가 없습니다.")
+            status_container.write("해당 월의 캐시된 데이터가 없습니다.")
         
         async with aiohttp.ClientSession(headers={"User-Agent": USER_AGENT}) as session:
             # 1. 목록 조회
-            status_container.write("🔍 1. 금융회사 및 계정항목 목록 조회 중...")
+            status_container.write("1. 금융회사 및 계정항목 목록 조회 중...")
             
             # 병렬로 목록 가져오기
             f1 = get_companies(session, 'H', api_key, error_log)
@@ -990,19 +1278,19 @@ async def run_async_collection(api_key, target_month, show_debug_api=False, over
             
             total_companies = len(life_companies) + len(non_life_companies)
             if total_companies == 0:
-                status_container.write("❌ 회사 정보를 가져오지 못했습니다. API Key를 확인해 주세요.")
+                status_container.write("회사 정보를 가져오지 못했습니다. API Key를 확인해 주세요.")
                 if error_log:
                     with st.expander("에러 로그 상세"):
                         for err in error_log:
                             st.write(err)
                 return []
-            status_container.write(f"✅ 회사 목록 확보: 총 {total_companies}개")
+            status_container.write(f"회사 목록 확보: 총 {total_companies}개")
 
             # 2. 작업 생성 (캐시에 없는 것만, overwrite 시 전체 재수집)
             tasks = []
             semaphore = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
             
-            status_container.write("📦 2. 수집 대상 데이터 확인 및 요청 생성 중...")
+            status_container.write("2. 수집 대상 데이터 확인 및 요청 생성 중...")
             # 기존 데이터 키 생성 (회사코드, 계정코드)
             existing_keys = set()
             if not cached_df.empty and not overwrite_existing:
@@ -1027,14 +1315,14 @@ async def run_async_collection(api_key, target_month, show_debug_api=False, over
             total_tasks = len(tasks)
             
             if total_tasks == 0:
-                status_container.write("✨ 모든 데이터가 이미 캐시되어 있습니다.")
-                status_container.update(label="✅ 캐시 데이터 리로드 완료!", state="complete", expanded=False)
+                status_container.write("모든 데이터가 이미 캐시되어 있습니다.")
+                status_container.update(label="캐시 데이터 리로드 완료", state="complete", expanded=False)
                 return cached_df.to_dict('records')
 
             if overwrite_existing and not cached_df.empty:
-                status_container.write(f"📡 기존 캐시를 덮어쓰기 위해 {total_tasks}건을 API로 다시 수집합니다...")
+                status_container.write(f"기존 캐시를 덮어쓰기 위해 {total_tasks}건을 API로 다시 수집합니다...")
             else:
-                status_container.write(f"📡 {len(existing_keys)}건은 캐시에서 발견했고, {total_tasks} 건의 새로운 데이터를 API로 수집합니다...")
+                status_container.write(f"{len(existing_keys)}건은 캐시에서 발견했고, {total_tasks}건의 새로운 데이터를 API로 수집합니다...")
 
             # 3. 실행 및 진행률 표시
             new_results = []
@@ -1071,7 +1359,7 @@ async def run_async_collection(api_key, target_month, show_debug_api=False, over
 
                 if overwrite_existing:
                     if delete_cached_data(target_month):
-                        status_container.write("🧹 기존 캐시 데이터를 삭제했습니다.")
+                        status_container.write("기존 캐시 데이터를 삭제했습니다.")
                     else:
                         return []
                     rows_to_save = all_results_df.drop_duplicates(subset=['회사코드', '계정코드'], keep='last')
@@ -1087,41 +1375,47 @@ async def run_async_collection(api_key, target_month, show_debug_api=False, over
                     ].drop_duplicates(subset=['회사코드', '계정코드'], keep='last')
 
                 if not rows_to_save.empty:
-                    status_container.write(f"💾 {len(rows_to_save)}건의 신규/보정 데이터를 MotherDuck에 저장 중...")
+                    status_container.write(f"{len(rows_to_save)}건의 신규/보정 데이터를 MotherDuck에 저장 중...")
                     save_to_md(rows_to_save)
 
                 results = all_results_df[COLUMNS].to_dict('records')
             else:
                 if error_log:
-                    status_container.write("⚠️ 일부 요청에서 오류가 발생하여 신규 수집 데이터가 없습니다.")
+                    status_container.write("일부 요청에서 오류가 발생하여 신규 수집 데이터가 없습니다.")
                     with st.expander("에러 로그 상세"):
                         for err in error_log:
                             st.write(err)
                 results = cached_df.to_dict('records')
 
-            status_container.update(label="✅ 데이터 수집 및 캐싱 완료!", state="complete", expanded=False)
+            status_container.update(label="데이터 수집 및 캐싱 완료", state="complete", expanded=False)
             return results
 
     except Exception as e:
-        status_container.update(label="⚠️ 오류 발생", state="error")
+        status_container.update(label="오류 발생", state="error")
         st.error(f"오류 상세: {e}")
         return []
 
 # ==========================================
 # 4. Streamlit UI 구성
 # ==========================================
-st.title("📊 K-ICS Ratio Dashboard")
+render_app_header()
 
 # 메인 탭 분리: 분석 대시보드, 회사별 현황, 데이터 수집기
-main_tabs = ["📈 Trend", "📊 Snapshot", "📉 Changes", "📡 Collector"]
-selected_tab = ui.tabs(
+main_tabs = ["Trend", "Snapshot", "Changes", "Collector"]
+selected_tab = st.radio(
+    "메인 화면 선택",
     options=main_tabs,
-    default_value=main_tabs[0],
+    index=0,
+    horizontal=True,
+    label_visibility="collapsed",
     key="main_tabs",
 )
 
-if selected_tab == "📈 Trend":
-    st.subheader("📊 K-ICS 비율 추이 분석")
+if selected_tab == "Trend":
+    render_section_header(
+        "K-ICS 비율 추이 분석",
+        "업권별 K-ICS 비율, 국고채 10년 금리, 개별 회사 추이를 함께 비교합니다."
+    )
     
     analysis_df = load_kics_analysis_data()
     company_ts_df = load_company_kics_timeseries()
@@ -1153,7 +1447,7 @@ if selected_tab == "📈 Trend":
                 st.warning("영문 회사명 매핑이 있는 회사가 없어 회사 차트를 표시할 수 없습니다.")
             else:
                 selected_company = st.selectbox(
-                    "🏢 회사 선택",
+                    "회사 선택",
                     options=available_companies,
                     index=0,
                     format_func=lambda name: get_english_company_name(name) if get_english_company_name(name) else name,
@@ -1169,9 +1463,9 @@ if selected_tab == "📈 Trend":
 
             # 색상 매핑
             colors = {
-                '생명보험': '#1f77b4',
-                '손해보험': '#ff7f0e',
-                '전체': '#2ca02c'
+                '생명보험': SECTOR_COLORS['생명보험'],
+                '손해보험': SECTOR_COLORS['손해보험'],
+                '전체': SECTOR_COLORS['전체']
             }
 
             for g in ['생명보험', '손해보험', '전체']:
@@ -1222,8 +1516,8 @@ if selected_tab == "📈 Trend":
                     yaxis_index=1,
                     symbol="diamond",
                     symbol_size=12,
-                    linestyle_opts=opts.LineStyleOpts(width=2, type_="dashed", color="#6e7074"),
-                    itemstyle_opts=opts.ItemStyleOpts(color="#6e7074"),
+                    linestyle_opts=opts.LineStyleOpts(width=2, type_="dashed", color=CHART_NEUTRAL),
+                    itemstyle_opts=opts.ItemStyleOpts(color=CHART_NEUTRAL),
                     label_opts=opts.LabelOpts(is_show=False),
                 )
 
@@ -1245,8 +1539,8 @@ if selected_tab == "📈 Trend":
                     pos_top="8%",
                     orient="horizontal",
                     selected_map=selected_map,
-                    background_color="rgba(255,255,255,0.7)",
-                    border_color="#ccc"
+                    background_color="rgba(255,255,255,0)",
+                    border_color="rgba(255,255,255,0)"
                 ),
                 datazoom_opts=[
                     opts.DataZoomOpts(range_start=0, range_end=100),
@@ -1280,8 +1574,8 @@ if selected_tab == "📈 Trend":
                     y_axis=[round(float(v), 2) if pd.notnull(v) else None for v in c_df['ratio_after']],
                     symbol="circle",
                     symbol_size=10,
-                    linestyle_opts=opts.LineStyleOpts(width=4, color="#2a9d8f"),
-                    itemstyle_opts=opts.ItemStyleOpts(color="#2a9d8f"),
+                    linestyle_opts=opts.LineStyleOpts(width=4, color=SECTOR_COLORS['전체']),
+                    itemstyle_opts=opts.ItemStyleOpts(color=SECTOR_COLORS['전체']),
                     label_opts=opts.LabelOpts(is_show=False),
                     is_smooth=False,
                 )
@@ -1290,8 +1584,8 @@ if selected_tab == "📈 Trend":
                     y_axis=[round(float(v), 2) if pd.notnull(v) else None for v in c_df['ratio_before']],
                     symbol="circle",
                     symbol_size=8,
-                    linestyle_opts=opts.LineStyleOpts(width=2, color="#264653"),
-                    itemstyle_opts=opts.ItemStyleOpts(color="#264653"),
+                    linestyle_opts=opts.LineStyleOpts(width=2, color=SECTOR_COLORS['생명보험']),
+                    itemstyle_opts=opts.ItemStyleOpts(color=SECTOR_COLORS['생명보험']),
                     label_opts=opts.LabelOpts(is_show=False),
                     is_smooth=False,
                 )
@@ -1315,8 +1609,8 @@ if selected_tab == "📈 Trend":
                         yaxis_index=1,
                         symbol="diamond",
                         symbol_size=12,
-                        linestyle_opts=opts.LineStyleOpts(width=2, type_="dashed", color="#6e7074"),
-                        itemstyle_opts=opts.ItemStyleOpts(color="#6e7074"),
+                        linestyle_opts=opts.LineStyleOpts(width=2, type_="dashed", color=CHART_NEUTRAL),
+                        itemstyle_opts=opts.ItemStyleOpts(color=CHART_NEUTRAL),
                         label_opts=opts.LabelOpts(is_show=False),
                     )
 
@@ -1334,8 +1628,8 @@ if selected_tab == "📈 Trend":
                         pos_left="center",
                         pos_top="8%",
                         orient="horizontal",
-                        background_color="rgba(255,255,255,0.7)",
-                        border_color="#ccc"
+                        background_color="rgba(255,255,255,0)",
+                        border_color="rgba(255,255,255,0)"
                     ),
                     datazoom_opts=[
                         opts.DataZoomOpts(range_start=0, range_end=100),
@@ -1353,13 +1647,13 @@ if selected_tab == "📈 Trend":
 
                 st_pyecharts(company_line, height="500px", key="dashboard_company_line_chart", renderer="svg")
         
-        with st.expander("📍 상세 수치 데이터 확인"):
+        with st.expander("상세 수치 데이터 확인"):
             st.dataframe(analysis_df, width="stretch")
     else:
         st.warning("표시할 분석 데이터가 없습니다. 먼저 'Collector' 탭에서 데이터를 수집해 주세요.")
         
         # 디버깅을 위한 데이터 현황 세션 (Dashboard에서도 데이터가 없을 때 표시)
-        with st.expander("🛠️ 데이터베이스 현황 확인 (디버깅)"):
+        with st.expander("데이터베이스 현황 확인"):
             conn = get_md_connection()
             if conn:
                 try:
@@ -1380,8 +1674,11 @@ if selected_tab == "📈 Trend":
             else:
                 st.warning("MotherDuck 연결 실패 (토큰 확인 필요)")
 
-elif selected_tab == "📊 Snapshot":
-    st.subheader("📊 회사별 K-ICS 비율 현황")
+elif selected_tab == "Snapshot":
+    render_section_header(
+        "회사별 K-ICS 비율 현황",
+        "선택한 기준년월의 회사별 지급여력비율과 경과조치 효과를 업권별로 확인합니다."
+    )
     
     # 가용한 모든 기준년월 가져오기
     available_months = get_available_months()
@@ -1391,7 +1688,7 @@ elif selected_tab == "📊 Snapshot":
         col_m, col_e = st.columns([1, 2])
         with col_m:
             selected_month = st.selectbox(
-                "📅 기준년월 선택", 
+                "기준년월 선택",
                 options=available_months, 
                 index=0,
                 help="조회할 기준년월을 선택하세요. 최신 데이터가 상단에 위치합니다."
@@ -1432,7 +1729,7 @@ elif selected_tab == "📊 Snapshot":
             # 제외할 회사 선택 UI
             all_companies = sorted(company_df['회사명'].unique().tolist())
             excluded_companies = st.multiselect(
-                "📊 비교 분석에서 제외할 회사 선택 (선택 시 차트에서 제거됩니다)",
+                "비교 분석에서 제외할 회사 선택",
                 options=all_companies,
                 default=[],
                 help="데이터값이 비정상적으로 크거나 작아 차트의 전체 형태를 왜곡하는 회사를 제외할 수 있습니다."
@@ -1449,9 +1746,9 @@ elif selected_tab == "📊 Snapshot":
             
             # 색상 설정 (연한 색, 진한 색)
             color_sets = {
-                '생명보험': ['#A6CEE3', '#1F78B4'], 
-                '손해보험': ['#FDBF6F', '#FF7F00'],
-                '재보험': ['#B2DF8A', '#33A02C']  # 연한 초록, 진한 초록
+                '생명보험': ['#d9eaf5', SECTOR_COLORS['생명보험']],
+                '손해보험': ['#f8dfc3', SECTOR_COLORS['손해보험']],
+                '재보험': ['#d9efe9', SECTOR_COLORS['재보험']]
             }
 
             # 차트 렌더링 로직 (상단 2열: 생명/손해, 하단 1열: 재보험)
@@ -1477,7 +1774,7 @@ elif selected_tab == "📊 Snapshot":
                 weighted_avg = (sum_num / sum_den * 100) if sum_den > 0 else 0
                 render_sector_chart(sector, filtered_df, company_df, color_sets, weighted_avg)
             
-            with st.expander("📍 상세 데이터 확인"):
+            with st.expander("상세 데이터 확인"):
                 # 표시용 데이터프레임 구성
                 display_df = filtered_df.copy()
                 display_df['영문회사명'] = display_df['회사명'].map(get_english_company_name)
@@ -1499,8 +1796,11 @@ elif selected_tab == "📊 Snapshot":
     else:
         st.warning("표시할 회사별 데이터가 없습니다. 먼저 'Collector' 탭에서 데이터를 수집해 주세요.")
 
-elif selected_tab == "📉 Changes":
-    st.subheader("📉 회사별 K-ICS 변동 (최근 분기 vs 직전 분기)")
+elif selected_tab == "Changes":
+    render_section_header(
+        "회사별 K-ICS 변동",
+        "두 기준시점의 경과조치 전후 비율 변화를 회사별로 비교합니다."
+    )
 
     available_months = get_available_months()
     if len(available_months) < 2:
@@ -1675,14 +1975,18 @@ elif selected_tab == "📉 Changes":
                             width="stretch"
                         )
 
-elif selected_tab == "📡 Collector":
-    st.subheader("📡 FSS Open API 데이터 수집")
+elif selected_tab == "Collector":
+    render_section_header(
+        "FSS Open API 데이터 수집",
+        "기준년월별 보험사 지급여력 데이터를 수집하고 캐시 상태를 관리합니다."
+    )
     
     # 설정 섹션 (기존 사이드바에서 이동)
-    with st.expander("⚙️ 수집 설정 (Settings)", expanded=True):
+    with st.expander("수집 설정", expanded=True):
         col1, col2 = st.columns(2)
         with col1:
-            if not st.secrets.get("FSS_API_KEY"):
+            stored_api_key = get_secret("FSS_API_KEY", "")
+            if not stored_api_key:
                 API_KEY = st.text_input(
                     "금융감독원 API Key", 
                     value=API_KEY,
@@ -1690,8 +1994,8 @@ elif selected_tab == "📡 Collector":
                     help="인증키를 입력하세요."
                 )
             else:
-                st.success("✅ API Key가 로드되었습니다.")
-                API_KEY = st.secrets.get("FSS_API_KEY")
+                st.success("API Key가 로드되었습니다.")
+                API_KEY = stored_api_key
         
         with col2:
             TARGET_MONTH = st.text_input(
@@ -1699,7 +2003,7 @@ elif selected_tab == "📡 Collector":
                 value="202512",
                 help="조회하고 싶은 년월을 입력하세요."
             )
-        show_debug_api = st.checkbox("🔍 API 통신 로그 확인 (상세)", value=True)
+        show_debug_api = st.checkbox("API 통신 로그 확인", value=True)
 
     existing_target_df = pd.DataFrame()
     overwrite_existing = False
@@ -1729,7 +2033,7 @@ elif selected_tab == "📡 Collector":
     """)
     
     # 실행 버튼
-    submit_label = "♻️ 기존 데이터 덮어쓰기" if overwrite_existing else "🚀 데이터 수집 시작 (Start Collection)"
+    submit_label = "기존 데이터 덮어쓰기" if overwrite_existing else "데이터 수집 시작"
     if st.button(submit_label, type="primary"):
         if not API_KEY:
             st.error("API Key를 입력해주세요. (사이드바에서 입력 가능)")
@@ -1760,32 +2064,35 @@ elif selected_tab == "📡 Collector":
 
                 # 결과 섹션
                 st.divider()
-                st.success(f"✅ {TARGET_MONTH} 데이터 처리가 완료되었습니다.")
-                result_tabs = ["📋 요약 테이블 (Pivot)", "📄 RAW 데이터"]
-                selected_result_tab = ui.tabs(
+                st.success(f"{TARGET_MONTH} 데이터 처리가 완료되었습니다.")
+                result_tabs = ["요약 테이블", "RAW 데이터"]
+                selected_result_tab = st.radio(
+                    "수집 결과 보기",
                     options=result_tabs,
-                    default_value=result_tabs[0],
+                    index=0,
+                    horizontal=True,
+                    label_visibility="collapsed",
                     key="collector_result_tabs",
                 )
 
-                if selected_result_tab == "📋 요약 테이블 (Pivot)":
-                    st.subheader(f"{TARGET_MONTH} 수집 결과 (요약)")
+                if selected_result_tab == "요약 테이블":
+                    st.markdown(f"#### {TARGET_MONTH} 수집 결과 요약")
                     st.dataframe(df_pivot, width="stretch")
 
                     # CSV 다운로드
                     csv = df_pivot.to_csv(index=False, encoding='utf-8-sig')
                     st.download_button(
-                        label="💾 수집 결과 다운로드 (CSV)",
+                        label="수집 결과 다운로드 (CSV)",
                         data=csv,
                         file_name=f"insurance_solvency_{TARGET_MONTH}_result.csv",
                         mime="text/csv"
                     )
 
-                elif selected_result_tab == "📄 RAW 데이터":
-                    st.subheader(f"{TARGET_MONTH} RAW 데이터")
+                elif selected_result_tab == "RAW 데이터":
+                    st.markdown(f"#### {TARGET_MONTH} RAW 데이터")
                     st.dataframe(df, width="stretch")
                 
                 # 수집이 완료되었으니 화면 갱신을 유도하거나 정보를 제공
-                st.info("💡 새로운 데이터가 저장되었습니다. 'Trend' 탭으로 이동하여 차트를 확인해 보세요.")
+                st.info("새로운 데이터가 저장되었습니다. Trend 탭에서 차트를 확인해 보세요.")
             else:
                 st.warning("수집된 데이터가 없습니다. API Key나 기준년월을 확인해주세요.")

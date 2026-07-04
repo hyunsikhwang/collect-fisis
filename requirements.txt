@@ -8,4 +8,3 @@ requests
 pytz
 streamlit-echarts
 pyecharts
-streamlit-shadcn-ui
