@@ -9,6 +9,7 @@ import duckdb
 import os
 import math
 import requests
+import calendar
 from datetime import datetime
 from pytz import timezone
 from streamlit_echarts import st_pyecharts
@@ -428,6 +429,39 @@ def get_secret(key, default=""):
         return st.secrets.get(key, os.environ.get(key, default))
     except Exception:
         return os.environ.get(key, default)
+
+def format_quarter_label(yyyymm):
+    """Convert YYYYMM to 'YYYY년 Q분기' label for UI."""
+    s = str(yyyymm)
+    if len(s) != 6 or not s.isdigit():
+        return s
+    yyyy = s[:4]
+    mm = int(s[4:6])
+    if mm < 1 or mm > 12:
+        return s
+    q = (mm - 1) // 3 + 1
+    return f"{yyyy}년 {q}분기"
+
+def get_recent_quarter_end_months(reference_dt=None, count=3):
+    """Return recent completed quarter-end months as YYYYMM."""
+    if reference_dt is None:
+        reference_dt = datetime.now(timezone('Asia/Seoul'))
+
+    reference_date = reference_dt.date()
+    months = []
+    year = reference_dt.year
+
+    while len(months) < count:
+        for quarter_month in [12, 9, 6, 3]:
+            last_day = calendar.monthrange(year, quarter_month)[1]
+            quarter_end_date = datetime(year, quarter_month, last_day).date()
+            if quarter_end_date <= reference_date:
+                months.append(f"{year}{quarter_month:02d}")
+                if len(months) == count:
+                    break
+        year -= 1
+
+    return months
 
 # API 키 (st.secrets 처리 후 필요시 UI에서 입력)
 API_KEY = get_secret("FSS_API_KEY", "")
@@ -1362,6 +1396,86 @@ async def fetch_statistics(session, semaphore, company, account, api_key, target
                 
     return None
 
+async def month_has_available_statistics(session, api_key, target_month, sector_payloads, sample_company_count=6):
+    """Check whether FSS has any statistics for a quarter month using sampled requests."""
+    semaphore = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
+    probe_tasks = []
+
+    for companies, accounts in sector_payloads:
+        candidate_companies = companies[:sample_company_count]
+        candidate_accounts = [
+            account for account in accounts
+            if str(account.get('accountCd', '')).strip() in {'A', 'B', 'D', 'E'}
+        ]
+        if not candidate_accounts:
+            candidate_accounts = accounts[:2]
+
+        for company in candidate_companies:
+            for account in candidate_accounts[:2]:
+                probe_tasks.append(
+                    asyncio.create_task(fetch_statistics(
+                        session,
+                        semaphore,
+                        company,
+                        account,
+                        api_key,
+                        target_month,
+                        error_list=None,
+                        show_debug=False,
+                    ))
+                )
+
+    try:
+        for task in asyncio.as_completed(probe_tasks):
+            result = await task
+            if result:
+                for pending_task in probe_tasks:
+                    if not pending_task.done():
+                        pending_task.cancel()
+                await asyncio.gather(*probe_tasks, return_exceptions=True)
+                return True
+    finally:
+        for pending_task in probe_tasks:
+            if not pending_task.done():
+                pending_task.cancel()
+
+    return False
+
+async def check_recent_api_update_status(api_key, candidate_months):
+    """Probe recent quarter-end months and return the latest month with API data."""
+    async with aiohttp.ClientSession(headers={"User-Agent": USER_AGENT}) as session:
+        life_companies, non_life_companies, life_accounts, non_life_accounts = await asyncio.gather(
+            get_companies(session, 'H', api_key),
+            get_companies(session, 'I', api_key),
+            get_accounts(session, 'SH021', api_key),
+            get_accounts(session, 'SI021', api_key),
+        )
+
+        sector_payloads = [
+            (life_companies, life_accounts),
+            (non_life_companies, non_life_accounts),
+        ]
+        if not any(companies and accounts for companies, accounts in sector_payloads):
+            return {
+                "latest_month": None,
+                "checks": [
+                    {"기준년월": month, "분기": format_quarter_label(month), "상태": "확인 불가"}
+                    for month in candidate_months
+                ],
+                "error": "회사 또는 계정 목록을 가져오지 못했습니다. API Key를 확인해 주세요.",
+            }
+
+        checks = []
+        latest_month = None
+        for month in candidate_months:
+            has_data = await month_has_available_statistics(session, api_key, month, sector_payloads)
+            status = "업데이트 확인" if has_data else "데이터 없음"
+            checks.append({"기준년월": month, "분기": format_quarter_label(month), "상태": status})
+            if has_data and latest_month is None:
+                latest_month = month
+
+        return {"latest_month": latest_month, "checks": checks, "error": None}
+
 # ==========================================
 # 3. 메인 실행 로직 (Async Wrapper)
 # ==========================================
@@ -2092,6 +2206,35 @@ elif selected_tab == "Collector":
                 help="조회하고 싶은 년월을 입력하세요."
             )
         show_debug_api = st.checkbox("API 통신 로그 확인", value=True)
+
+    candidate_quarter_months = get_recent_quarter_end_months(count=3)
+    with st.container(border=True):
+        st.markdown("#### API 업데이트 상태")
+        st.caption(f"확인 대상: {', '.join(candidate_quarter_months)}")
+        refresh_update_status = st.button("최신 업데이트 확인", use_container_width=False)
+
+        api_key_marker = str(abs(hash(API_KEY))) if API_KEY else "no_key"
+        availability_cache_key = f"api_update_status_{api_key_marker}_{'_'.join(candidate_quarter_months)}"
+        if API_KEY:
+            if refresh_update_status or availability_cache_key not in st.session_state:
+                with st.spinner("최근 분기말 데이터 업데이트 여부를 확인 중입니다..."):
+                    st.session_state[availability_cache_key] = asyncio.run(
+                        check_recent_api_update_status(API_KEY, candidate_quarter_months)
+                    )
+
+            update_status = st.session_state.get(availability_cache_key)
+            if update_status:
+                if update_status.get("error"):
+                    st.warning(update_status["error"])
+                elif update_status.get("latest_month"):
+                    latest_month = update_status["latest_month"]
+                    st.success(f"FSS API 최신 업데이트 확인: {format_quarter_label(latest_month)} ({latest_month})")
+                else:
+                    st.warning("최근 3개 분기말 후보에서 업데이트된 데이터를 찾지 못했습니다.")
+
+                st.dataframe(pd.DataFrame(update_status["checks"]), width="stretch", hide_index=True)
+        else:
+            st.info("API Key가 로드되면 최근 3개 분기말 기준 데이터 업데이트 여부를 확인합니다.")
 
     existing_target_df = pd.DataFrame()
     overwrite_existing = False
